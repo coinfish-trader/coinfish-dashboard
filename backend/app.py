@@ -7,6 +7,7 @@ Endpoints:
   GET  /api/scan/stream        — SSE: streams per-ticker progress then final results
   GET  /api/scan/cached        — return last cached scan without re-running
   GET  /api/ticker/<SYMBOL>    — on-demand single-ticker scan
+  GET  /api/squeeze            — TTM Squeeze scan on all 56 tickers (cached 30 min)
 """
 
 import json
@@ -17,11 +18,12 @@ import os
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
-from scanner import run_full_scan, scan_ticker, WATCHLIST
+from scanner import run_full_scan, scan_ticker, run_squeeze_scan, WATCHLIST
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
+# ── Options scan cache ────────────────────────────────────────────────────────
 _cache = {
     "results":    None,
     "timestamp":  None,
@@ -29,6 +31,12 @@ _cache = {
 }
 _cache_lock   = threading.Lock()
 CACHE_TTL_SEC = 1800
+
+# ── Squeeze scan cache ────────────────────────────────────────────────────────
+_squeeze_cache      = {"results": None, "timestamp": None}
+_squeeze_cache_lock = threading.Lock()
+SQUEEZE_CACHE_TTL   = 1800  # 30 min
+
 
 @app.route("/api/health")
 def health():
@@ -138,6 +146,39 @@ def single_ticker(symbol):
         return jsonify({"error": "Invalid ticker symbol"}), 400
     result = scan_ticker(symbol)
     return jsonify(result)
+
+
+@app.route("/api/squeeze")
+def squeeze():
+    """
+    TTM Squeeze scan on all WATCHLIST tickers.
+    Results cached for SQUEEZE_CACHE_TTL seconds.
+    Pass ?refresh=1 to force a fresh scan.
+    """
+    force_refresh = request.args.get("refresh", "0") == "1"
+
+    with _squeeze_cache_lock:
+        age = time.time() - (_squeeze_cache["timestamp"] or 0)
+        if (
+            not force_refresh
+            and _squeeze_cache["results"] is not None
+            and age < SQUEEZE_CACHE_TTL
+        ):
+            return jsonify({
+                "cached":      True,
+                "age_seconds": round(age),
+                "data":        _squeeze_cache["results"],
+            })
+
+    try:
+        data = run_squeeze_scan()
+        with _squeeze_cache_lock:
+            _squeeze_cache["results"]   = data
+            _squeeze_cache["timestamp"] = time.time()
+        return jsonify({"cached": False, "age_seconds": 0, "data": data})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
