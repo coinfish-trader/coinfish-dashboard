@@ -20,6 +20,8 @@
   --blue:      #58a6ff;
   --blue-bg:   rgba(88,166,255,.12);
   --purple:    #bc8cff;
+  --orange:    #f0883e;
+  --orange-bg: rgba(240,136,62,.12);
   --text:      #c9d1d9;
   --muted:     #8b949e;
   --white:     #f0f6fc;
@@ -42,28 +44,17 @@ a:hover { text-decoration: underline; }
 
 /* ── Header ────────────────────────────────────────────────────────── */
 .header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
 }
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.logo { display: flex; align-items: center; gap: 10px; }
 .logo-icon {
   width: 36px; height: 36px;
   background: linear-gradient(135deg, #1f6feb, #388bfd);
-  border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px;
+  border-radius: 8px; display: flex; align-items: center;
+  justify-content: center; font-size: 18px;
 }
 .logo-text { font-size: 18px; font-weight: 700; color: var(--white); }
 .logo-sub  { font-size: 11px; color: var(--muted); margin-top: 1px; }
@@ -74,135 +65,90 @@ a:hover { text-decoration: underline; }
 /* ── Buttons ───────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: none; cursor: pointer;
-  font-size: 13px; font-weight: 600;
-  transition: opacity .15s, transform .1s;
+  padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; transition: opacity .15s, transform .1s;
 }
 .btn:hover  { opacity: .85; }
 .btn:active { transform: scale(.97); }
 .btn-primary { background: #1f6feb; color: #fff; }
+.btn-orange  { background: rgba(240,136,62,.15); color: var(--orange); border: 1px solid rgba(240,136,62,.4); }
 .btn-ghost   { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
 .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 /* ── Progress bar ──────────────────────────────────────────────────── */
 #progress-wrap {
-  display: none;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  margin-bottom: 16px;
+  display: none; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px;
 }
 .progress-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .progress-label b { color: var(--text); }
-.progress-bar-track {
-  height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden;
-}
+.progress-bar-track { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
 .progress-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #1f6feb, #388bfd);
-  border-radius: 3px;
-  transition: width .25s ease;
-  width: 0%;
+  height: 100%; background: linear-gradient(90deg, #1f6feb, #388bfd);
+  border-radius: 3px; transition: width .25s ease; width: 0%;
 }
-.progress-tickers {
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--muted);
-  height: 16px;
-  overflow: hidden;
-}
+.progress-tickers { margin-top: 8px; font-size: 11px; color: var(--muted); height: 16px; overflow: hidden; }
 
 /* ── Metric cards ──────────────────────────────────────────────────── */
 .metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;
 }
 @media (max-width: 700px) { .metric-grid { grid-template-columns: repeat(2,1fr); } }
 .metric-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 18px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 18px;
 }
 .metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
 .metric-value { font-size: 28px; font-weight: 700; color: var(--white); line-height: 1; }
 .metric-sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
-.metric-card.green { border-left: 3px solid var(--green); }
-.metric-card.red   { border-left: 3px solid var(--red); }
-.metric-card.yellow{ border-left: 3px solid var(--yellow); }
-.metric-card.blue  { border-left: 3px solid var(--blue); }
+.metric-card.green  { border-left: 3px solid var(--green); }
+.metric-card.red    { border-left: 3px solid var(--red); }
+.metric-card.yellow { border-left: 3px solid var(--yellow); }
+.metric-card.blue   { border-left: 3px solid var(--blue); }
+.metric-card.orange { border-left: 3px solid var(--orange); }
 
 /* ── Section headers ───────────────────────────────────────────────── */
-.section-header {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 12px;
-}
-.section-title {
-  font-size: 14px; font-weight: 700; color: var(--white);
-  text-transform: uppercase; letter-spacing: .06em;
-}
+.section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.section-title { font-size: 14px; font-weight: 700; color: var(--white); text-transform: uppercase; letter-spacing: .06em; }
 .section-badge {
-  font-size: 11px; padding: 2px 8px;
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: 12px; color: var(--muted);
+  font-size: 11px; padding: 2px 8px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 12px; color: var(--muted);
 }
 
 /* ── Top-3 picks ───────────────────────────────────────────────────── */
-.picks-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
-}
+.picks-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
 @media (max-width: 800px) { .picks-grid { grid-template-columns: 1fr; } }
 .pick-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px;
-  position: relative;
-  transition: border-color .2s;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; position: relative; transition: border-color .2s;
 }
 .pick-card.rank-1 { border-color: var(--green); }
 .pick-card.rank-1::before {
-  content: '★ TOP PICK';
-  position: absolute; top: -1px; right: 12px;
-  background: var(--green); color: #000;
-  font-size: 10px; font-weight: 700; letter-spacing: .05em;
-  padding: 2px 8px; border-radius: 0 0 6px 6px;
+  content: '★ TOP PICK'; position: absolute; top: -1px; right: 12px;
+  background: var(--green); color: #000; font-size: 10px; font-weight: 700;
+  letter-spacing: .05em; padding: 2px 8px; border-radius: 0 0 6px 6px;
 }
-.pick-rank   { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-.pick-ticker { font-size: 24px; font-weight: 800; color: var(--white); line-height: 1; }
-.pick-company{ font-size: 12px; color: var(--muted); margin-top: 2px; margin-bottom: 12px; }
-.pick-price  { font-size: 13px; color: var(--text); margin-bottom: 12px; }
-.pick-row    { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.pick-rank    { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.pick-ticker  { font-size: 24px; font-weight: 800; color: var(--white); line-height: 1; }
+.pick-company { font-size: 12px; color: var(--muted); margin-top: 2px; margin-bottom: 12px; }
+.pick-price   { font-size: 13px; color: var(--text); margin-bottom: 12px; }
+.pick-row     { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .pick-row-label { font-size: 11px; color: var(--muted); }
 .pick-row-value { font-size: 13px; font-weight: 600; color: var(--text); }
-.iv-bar-wrap { margin-bottom: 10px; }
-.iv-bar-label{ display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; color: var(--muted); }
-.iv-bar-track{
-  height: 8px; border-radius: 4px; background: var(--bg3); position: relative; overflow: hidden;
-}
-.iv-bar-fill {
+.iv-bar-wrap  { margin-bottom: 10px; }
+.iv-bar-label { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; color: var(--muted); }
+.iv-bar-track { height: 8px; border-radius: 4px; background: var(--bg3); position: relative; overflow: hidden; }
+.iv-bar-fill  {
   height: 100%;
   background: linear-gradient(to right, var(--green) 0%, var(--yellow) 50%, var(--red) 80%);
-  border-radius: 4px;
-  transition: width .5s ease;
+  border-radius: 4px; transition: width .5s ease;
 }
-.pick-setup {
-  margin-top: 10px;
-}
+.pick-setup { margin-top: 10px; }
 
 /* ── Badges ────────────────────────────────────────────────────────── */
 .badge {
-  display: inline-flex; align-items: center;
-  padding: 2px 10px; border-radius: 12px;
-  font-size: 11px; font-weight: 600; white-space: nowrap;
+  display: inline-flex; align-items: center; padding: 2px 10px;
+  border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap;
 }
 .badge-bull   { background: var(--green-bg);  color: var(--green); }
 .badge-bear   { background: var(--red-bg);    color: var(--red);   }
@@ -215,54 +161,32 @@ a:hover { text-decoration: underline; }
 
 /* ── Score dots ────────────────────────────────────────────────────── */
 .score-dots { display: flex; gap: 3px; align-items: center; }
-.score-dot  {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--bg3); border: 1px solid var(--border);
-}
-.score-dot.filled-4 { background: var(--green); border-color: var(--green); }
-.score-dot.filled-3 { background: #a5d6a7; border-color: #a5d6a7; }
+.score-dot  { width: 10px; height: 10px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border); }
+.score-dot.filled-4 { background: var(--green);  border-color: var(--green); }
+.score-dot.filled-3 { background: #a5d6a7;       border-color: #a5d6a7; }
 .score-dot.filled-2 { background: var(--yellow); border-color: var(--yellow); }
-.score-dot.filled-1 { background: var(--muted); border-color: var(--muted); }
+.score-dot.filled-1 { background: var(--muted);  border-color: var(--muted); }
 
 /* ── Table area ────────────────────────────────────────────────────── */
-.table-wrap {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
+.table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .table-toolbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
 }
 .filter-btn {
-  padding: 4px 12px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-  transition: all .15s;
+  padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 12px; transition: all .15s;
 }
 .filter-btn:hover  { border-color: var(--blue); color: var(--blue); }
 .filter-btn.active { background: var(--blue-bg); border-color: var(--blue); color: var(--blue); font-weight: 600; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; min-width: 750px; }
 thead th {
-  padding: 10px 14px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg2);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
+  padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+  border-bottom: 1px solid var(--border); background: var(--bg2);
+  cursor: pointer; user-select: none; white-space: nowrap;
 }
 thead th:hover { color: var(--text); }
 thead th .sort-icon { margin-left: 4px; opacity: .4; }
@@ -271,46 +195,69 @@ tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
 tbody tr:last-child { border-bottom: none; }
 tbody tr:hover { background: var(--bg3); }
 tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
-.td-ticker { font-weight: 700; color: var(--white); font-size: 14px; }
-.td-company{ color: var(--muted); font-size: 12px; }
-.td-price  { color: var(--text); font-variant-numeric: tabular-nums; }
-.td-iv     { min-width: 120px; }
+.td-ticker  { font-weight: 700; color: var(--white); font-size: 14px; }
+.td-company { color: var(--muted); font-size: 12px; }
+.td-price   { color: var(--text); font-variant-numeric: tabular-nums; }
+.td-iv      { min-width: 120px; }
 .iv-mini-track { height: 5px; background: var(--bg3); border-radius: 3px; margin-top: 3px; overflow: hidden; }
 .iv-mini-fill  { height: 100%; border-radius: 3px; background: linear-gradient(to right, var(--green), var(--yellow) 50%, var(--red) 80%); }
-.iv-val    { font-size: 12px; font-weight: 600; color: var(--text); }
-.iv-low    { color: var(--green); }
-.iv-mid    { color: var(--yellow); }
-.iv-high   { color: var(--red); }
-.pc-val    { font-variant-numeric: tabular-nums; }
-.pc-bull   { color: var(--green); }
-.pc-bear   { color: var(--red); }
-.pc-neut   { color: var(--yellow); }
-.na-val    { color: var(--muted); font-size: 12px; }
+.iv-val  { font-size: 12px; font-weight: 600; color: var(--text); }
+.iv-low  { color: var(--green); }
+.iv-mid  { color: var(--yellow); }
+.iv-high { color: var(--red); }
+.pc-val  { font-variant-numeric: tabular-nums; }
+.pc-bull { color: var(--green); }
+.pc-bear { color: var(--red); }
+.pc-neut { color: var(--yellow); }
+.na-val  { color: var(--muted); font-size: 12px; }
 
 /* ── Empty / loading states ────────────────────────────────────────── */
-#dashboard        { display: none; }
-#empty-state      {
-  text-align: center; padding: 60px 20px;
-  color: var(--muted);
-}
-#empty-state h2   { font-size: 18px; color: var(--text); margin-bottom: 8px; }
-#empty-state p    { font-size: 13px; margin-bottom: 20px; }
+#dashboard   { display: none; }
+#empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+#empty-state h2 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+#empty-state p  { font-size: 13px; margin-bottom: 20px; }
 
 /* ── Footer / sources ──────────────────────────────────────────────── */
 .footer {
-  margin-top: 20px;
-  padding: 14px 16px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.6;
+  margin-top: 20px; padding: 14px 16px; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 11px; color: var(--muted); line-height: 1.6;
 }
 .footer strong { color: var(--text); }
 .source-list { margin-top: 6px; max-height: 120px; overflow-y: auto; }
 .source-list a { color: var(--muted); font-size: 10px; }
 .source-list a:hover { color: var(--blue); }
+
+/* ── TTM Squeeze section ───────────────────────────────────────────── */
+#squeeze-section { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
+.sq-section-header {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.sq-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+
+.sq-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 8px; margin-top: 10px;
+}
+.sq-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px; transition: border-color .2s;
+}
+.sq-card.sq-fired  { border-color: var(--orange); box-shadow: 0 0 0 1px rgba(240,136,62,.2); }
+.sq-card.sq-on     { border-color: var(--red);    box-shadow: 0 0 0 1px rgba(248,81,73,.15); }
+
+.sq-ticker  { font-size: 16px; font-weight: 800; color: var(--white); }
+.sq-company { font-size: 10px; color: var(--muted); margin: 2px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sq-dot-row { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
+.sq-dot     { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.sq-status  { font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.sq-mom     { font-size: 22px; font-weight: 800; line-height: 1; }
+.sq-mom-lbl { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.sq-err     { font-size: 9px; color: var(--muted); font-style: italic; margin-top: 4px; }
+
+#squeeze-empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13px; }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────── */
 ::-webkit-scrollbar       { width: 6px; height: 6px; }
@@ -328,7 +275,7 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
       <div class="logo-icon">🐟</div>
       <div>
         <div class="logo-text">Coinfish Options Scanner</div>
-        <div class="logo-sub">56-stock watchlist · IV Rank · P/C Ratio · Earnings</div>
+        <div class="logo-sub">56-stock watchlist · IV Rank · P/C Ratio · Earnings · TTM Squeeze</div>
       </div>
     </div>
     <div class="header-right">
@@ -358,8 +305,6 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 
   <!-- ── Dashboard (hidden until scan completes) ───────────────── -->
   <div id="dashboard">
-
-    <!-- Metric cards -->
     <div class="metric-grid">
       <div class="metric-card blue">
         <div class="metric-label">Tickers Scanned</div>
@@ -383,29 +328,25 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
       </div>
     </div>
 
-    <!-- Top 3 -->
     <div class="section-header">
       <div class="section-title">Top 3 Picks</div>
       <div class="section-badge" id="top3-badge">Bull put spread · Score ≥ 3 · No earn risk</div>
     </div>
-    <div class="picks-grid" id="picks-grid">
-      <!-- Rendered by JS -->
-    </div>
+    <div class="picks-grid" id="picks-grid"></div>
 
-    <!-- Full table -->
     <div class="section-header" style="margin-top:8px">
       <div class="section-title">All Tickers</div>
       <div class="section-badge" id="table-count-badge">56 results</div>
     </div>
     <div class="table-wrap">
       <div class="table-toolbar">
-        <button class="filter-btn active" data-filter="all"           onclick="setFilter(this)">All</button>
-        <button class="filter-btn"        data-filter="bull"          onclick="setFilter(this)">Bull put spread</button>
-        <button class="filter-btn"        data-filter="bear"          onclick="setFilter(this)">Bear call spread</button>
-        <button class="filter-btn"        data-filter="highiv"        onclick="setFilter(this)">High IV</button>
-        <button class="filter-btn"        data-filter="no-earn-risk"  onclick="setFilter(this)">No earn risk</button>
-        <button class="filter-btn"        data-filter="earn-risk"     onclick="setFilter(this)">Earn risk</button>
-        <button class="filter-btn"        data-filter="vol-crushed"   onclick="setFilter(this)">Vol crushed</button>
+        <button class="filter-btn active" data-filter="all"          onclick="setFilter(this)">All</button>
+        <button class="filter-btn"        data-filter="bull"         onclick="setFilter(this)">Bull put spread</button>
+        <button class="filter-btn"        data-filter="bear"         onclick="setFilter(this)">Bear call spread</button>
+        <button class="filter-btn"        data-filter="highiv"       onclick="setFilter(this)">High IV</button>
+        <button class="filter-btn"        data-filter="no-earn-risk" onclick="setFilter(this)">No earn risk</button>
+        <button class="filter-btn"        data-filter="earn-risk"    onclick="setFilter(this)">Earn risk</button>
+        <button class="filter-btn"        data-filter="vol-crushed"  onclick="setFilter(this)">Vol crushed</button>
       </div>
       <div class="table-scroll">
         <table>
@@ -421,13 +362,11 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
               <th>Earnings</th>
             </tr>
           </thead>
-          <tbody id="table-body">
-          </tbody>
+          <tbody id="table-body"></tbody>
         </table>
       </div>
     </div>
 
-    <!-- Sources footnote -->
     <div class="footer">
       <strong>Data Sources:</strong> Barchart individual put-call-ratios pages (IV rank, P/C OI ratio primary) ·
       yfinance options chains (P/C OI ratio fallback) · yfinance HV approximation (IV rank fallback) ·
@@ -437,307 +376,332 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
       Always cross-reference before trading.</em>
       <div class="source-list" id="source-list"></div>
     </div>
-
   </div><!-- /dashboard -->
-</div><!-- /page -->
 
+  <!-- ── TTM Squeeze Scanner ────────────────────────────────────── -->
+  <div id="squeeze-section">
+    <div class="sq-section-header">
+      <div class="section-title">TTM Squeeze</div>
+      <div class="section-badge">Daily · BB(20,2) vs KC(20,1.5 ATR)</div>
+      <div class="sq-controls">
+        <span id="sq-scan-time" style="font-size:11px;color:var(--muted)"></span>
+        <button class="btn btn-orange" id="btn-squeeze" onclick="runSqueezeScan()">⚡ Scan Squeeze</button>
+      </div>
+    </div>
+
+    <div class="metric-grid" id="sq-metrics" style="display:none">
+      <div class="metric-card red">
+        <div class="metric-label">In Squeeze</div>
+        <div class="metric-value" id="sq-m-in">—</div>
+        <div class="metric-sub">BB inside Keltner</div>
+      </div>
+      <div class="metric-card orange">
+        <div class="metric-label">Fired Today</div>
+        <div class="metric-value" id="sq-m-fired">—</div>
+        <div class="metric-sub">Squeeze just released</div>
+      </div>
+      <div class="metric-card green">
+        <div class="metric-label">Bull Momentum</div>
+        <div class="metric-value" id="sq-m-bull">—</div>
+        <div class="metric-sub">Positive histogram</div>
+      </div>
+      <div class="metric-card blue">
+        <div class="metric-label">Bear Momentum</div>
+        <div class="metric-value" id="sq-m-bear">—</div>
+        <div class="metric-sub">Negative histogram</div>
+      </div>
+    </div>
+
+    <div id="sq-filter-bar" style="display:none">
+      <div class="table-wrap" style="border-radius:var(--radius) var(--radius) 0 0">
+        <div class="table-toolbar">
+          <button class="filter-btn active" data-sq="all"        onclick="setSqFilter(this)">All 56</button>
+          <button class="filter-btn"        data-sq="fired"      onclick="setSqFilter(this)">⚡ Fired</button>
+          <button class="filter-btn"        data-sq="squeeze_on" onclick="setSqFilter(this)">🔴 In Squeeze</button>
+          <button class="filter-btn"        data-sq="bull"       onclick="setSqFilter(this)">▲ Bull Mom</button>
+          <button class="filter-btn"        data-sq="bear"       onclick="setSqFilter(this)">▼ Bear Mom</button>
+        </div>
+      </div>
+      <div class="sq-grid" id="sq-grid"></div>
+    </div>
+
+    <div id="squeeze-empty">
+      Click <strong>Scan Squeeze</strong> to check all 56 tickers for TTM Squeeze on the daily chart.
+    </div>
+  </div>
+
+</div><!-- /page -->
 <script>
-/* ─── CONFIG ─────────────────────────────────────────────────────────
-   Change API_BASE to your deployed backend URL after deploying.
-   For local testing use http://localhost:5000
-─────────────────────────────────────────────────────────────────────*/
 const API_BASE = 'https://coinfish-dashboard-production.up.railway.app';
 
-/* ─── State ──────────────────────────────────────────────────────── */
+/* ── Options scan state ──────────────────────────────────────────── */
 let allResults   = [];
-let currentFilter = 'all';
 let currentSort  = { key: 'score', dir: -1 };
-let lastScanTime = null;
+let _filterKey   = 'all';
 
-/* ─── Scan ───────────────────────────────────────────────────────── */
+/* ── Squeeze state ───────────────────────────────────────────────── */
+let allSqResults = [];
+let sqFilter     = 'all';
+
+/* ══════════════════════════════════════════════════════════════════
+   OPTIONS SCAN
+══════════════════════════════════════════════════════════════════ */
 function startScan() {
   const btn = document.getElementById('btn-scan');
-  btn.disabled = true;
-  btn.textContent = '⏳ Scanning…';
-
+  btn.disabled = true; btn.textContent = '⏳ Scanning…';
   document.getElementById('progress-wrap').style.display = 'block';
   document.getElementById('empty-state').style.display   = 'none';
   document.getElementById('dashboard').style.display     = 'none';
 
   const es = new EventSource(`${API_BASE}/api/scan/stream`);
-
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-
-    if (msg.type === 'started') {
-      document.getElementById('prog-total').textContent = msg.total;
-      return;
-    }
-
+    if (msg.type === 'started') { document.getElementById('prog-total').textContent = msg.total; return; }
     if (msg.type === 'progress') {
       const pct = Math.round((msg.completed / msg.total) * 100);
-      document.getElementById('prog-fill').style.width       = pct + '%';
-      document.getElementById('prog-completed').textContent  = msg.completed;
-      document.getElementById('prog-total').textContent      = msg.total;
+      document.getElementById('prog-fill').style.width      = pct + '%';
+      document.getElementById('prog-completed').textContent = msg.completed;
+      document.getElementById('prog-total').textContent     = msg.total;
       document.getElementById('prog-ticker-label').textContent =
         `✓ ${msg.ticker} — ${msg.result.setup}${msg.result.iv_rank != null ? '  IV: ' + msg.result.iv_rank : ''}${msg.result.pc_ratio != null ? '  P/C: ' + msg.result.pc_ratio : ''}`;
       return;
     }
-
-    if (msg.type === 'cached' || msg.type === 'complete') {
-      es.close();
-      renderDashboard(msg.data);
-      resetScanBtn();
-      return;
-    }
-
-    if (msg.type === 'error') {
-      es.close();
-      alert('Scan error: ' + msg.message);
-      resetScanBtn();
-      return;
-    }
+    if (msg.type === 'cached' || msg.type === 'complete') { es.close(); renderDashboard(msg.data); resetScanBtn(); return; }
+    if (msg.type === 'error') { es.close(); alert('Scan error: ' + msg.message); resetScanBtn(); return; }
   };
-
-  es.onerror = () => {
-    es.close();
-    alert('Connection to backend lost. Make sure the backend is running at ' + API_BASE);
-    resetScanBtn();
-  };
+  es.onerror = () => { es.close(); alert('Connection to backend lost at ' + API_BASE); resetScanBtn(); };
 }
 
 function resetScanBtn() {
   const btn = document.getElementById('btn-scan');
-  btn.disabled  = false;
-  btn.textContent = '↺ Re-scan';
+  btn.disabled = false; btn.textContent = '↺ Re-scan';
   document.getElementById('progress-wrap').style.display = 'none';
 }
 
 async function loadCached() {
   try {
-    const res = await fetch(`${API_BASE}/api/scan/cached`);
-    const json = await res.json();
-    if (json.cached && json.data) {
-      renderDashboard(json.data);
-    } else {
-      alert('No cached scan available. Click Run Scan.');
-    }
-  } catch (e) {
-    alert('Could not reach backend at ' + API_BASE);
-  }
+    const r = await fetch(`${API_BASE}/api/scan/cached`);
+    const j = await r.json();
+    if (j.cached && j.data) { renderDashboard(j.data); }
+    else { alert('No cached scan. Click Run Scan.'); }
+  } catch (e) { alert('Could not reach backend at ' + API_BASE); }
 }
 
-/* ─── Render ─────────────────────────────────────────────────────── */
 function renderDashboard(data) {
-  allResults   = data.results;
-  lastScanTime = data.scan_time;
-
-  // Header time
+  allResults = data.results;
   const ts = new Date(data.scan_time);
-  document.getElementById('scan-time-label').innerHTML =
-    `Last scan: <span>${ts.toLocaleString()}</span>`;
-  document.getElementById('btn-cached').style.display = 'inline-flex';
-
-  // Metric cards
+  document.getElementById('scan-time-label').innerHTML = `Last scan: <span>${ts.toLocaleString()}</span>`;
+  document.getElementById('btn-cached').style.display  = 'inline-flex';
   document.getElementById('m-scanned').textContent  = data.tickers_scanned;
   document.getElementById('m-earn').textContent      = data.earnings_risk_count;
   document.getElementById('m-crush').textContent     = data.vol_crushed_count;
   document.getElementById('m-eligible').textContent  = data.eligible_count;
-
-  // Top 3
   renderPicks(data.top_3);
-
-  // Table
   renderTable(filterResults(allResults));
-
-  // Sources
   renderSources(allResults);
-
-  document.getElementById('dashboard').style.display    = 'block';
-  document.getElementById('empty-state').style.display  = 'none';
+  document.getElementById('dashboard').style.display   = 'block';
+  document.getElementById('empty-state').style.display = 'none';
 }
 
-/* ── Pick cards ──────────────────────────────────────────────────── */
 function renderPicks(picks) {
   const grid = document.getElementById('picks-grid');
   if (!picks.length) {
-    grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;color:var(--muted);font-size:13px">
-      No clean Bull put spread candidates (score ≥ 3, no earnings risk) found in this scan.
-    </div>`;
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;color:var(--muted);font-size:13px">No clean Bull put spread candidates (score ≥ 3, no earnings risk) found.</div>`;
     return;
   }
-
   grid.innerHTML = picks.map((p, i) => `
-    <div class="pick-card rank-${i + 1}">
-      <div class="pick-rank">#${i + 1} · ${p.sector}</div>
+    <div class="pick-card rank-${i+1}">
+      <div class="pick-rank">#${i+1} · ${p.sector}</div>
       <div class="pick-ticker">${p.ticker}</div>
       <div class="pick-company">${p.company}</div>
-      ${p.price ? `<div class="pick-price">$${p.price.toLocaleString('en-US', {minimumFractionDigits:2})}</div>` : ''}
-
+      ${p.price ? `<div class="pick-price">$${p.price.toLocaleString('en-US',{minimumFractionDigits:2})}</div>` : ''}
       <div class="iv-bar-wrap">
-        <div class="iv-bar-label">
-          <span>IV Rank</span>
-          <span class="${ivClass(p.iv_rank)}">${p.iv_rank != null ? p.iv_rank + '%' : 'N/A'}
-            ${p.iv_source === 'yfinance_approx' ? '<small title="Approximated">~</small>' : ''}
-          </span>
+        <div class="iv-bar-label"><span>IV Rank</span>
+          <span class="${ivClass(p.iv_rank)}">${p.iv_rank != null ? p.iv_rank+'%' : 'N/A'}${p.iv_source==='yfinance_approx'?'<small>~</small>':''}</span>
         </div>
-        <div class="iv-bar-track">
-          <div class="iv-bar-fill" style="width:${p.iv_rank != null ? p.iv_rank : 0}%"></div>
-        </div>
+        <div class="iv-bar-track"><div class="iv-bar-fill" style="width:${p.iv_rank||0}%"></div></div>
       </div>
-
-      <div class="pick-row">
-        <span class="pick-row-label">P/C OI Ratio</span>
-        <span class="pick-row-value ${pcClass(p.pc_ratio)}">${p.pc_ratio != null ? p.pc_ratio : 'N/A'}</span>
-      </div>
-      <div class="pick-row">
-        <span class="pick-row-label">Score</span>
-        <span>${scoreDots(p.score)}</span>
-      </div>
+      <div class="pick-row"><span class="pick-row-label">P/C OI Ratio</span>
+        <span class="pick-row-value ${pcClass(p.pc_ratio)}">${p.pc_ratio != null ? p.pc_ratio : 'N/A'}</span></div>
+      <div class="pick-row"><span class="pick-row-label">Score</span><span>${scoreDots(p.score)}</span></div>
       <div class="pick-setup">${setupBadge(p.setup)}</div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
-/* ── Table ───────────────────────────────────────────────────────── */
-let _filterKey = 'all';
-
 function setFilter(btn) {
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  _filterKey = btn.dataset.filter;
+  document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active'); _filterKey = btn.dataset.filter;
   renderTable(filterResults(allResults));
 }
 
 function filterResults(rows) {
   return rows.filter(r => {
-    if (_filterKey === 'all')         return true;
-    if (_filterKey === 'bull')        return r.setup === 'Bull put spread';
-    if (_filterKey === 'bear')        return r.setup === 'Bear call spread';
-    if (_filterKey === 'highiv')      return r.setup === 'High IV / neutral';
+    if (_filterKey === 'all')          return true;
+    if (_filterKey === 'bull')         return r.setup === 'Bull put spread';
+    if (_filterKey === 'bear')         return r.setup === 'Bear call spread';
+    if (_filterKey === 'highiv')       return r.setup === 'High IV / neutral';
     if (_filterKey === 'no-earn-risk') return !['earn_risk','vol_crushed'].includes(r.earnings_status);
-    if (_filterKey === 'earn-risk')   return r.earnings_status === 'earn_risk';
-    if (_filterKey === 'vol-crushed') return r.earnings_status === 'vol_crushed';
+    if (_filterKey === 'earn-risk')    return r.earnings_status === 'earn_risk';
+    if (_filterKey === 'vol-crushed')  return r.earnings_status === 'vol_crushed';
     return true;
   });
 }
 
 function sortBy(key) {
-  if (currentSort.key === key) {
-    currentSort.dir *= -1;
-  } else {
-    currentSort = { key, dir: key === 'ticker' || key === 'company' ? 1 : -1 };
-  }
-  // Update header highlight
+  if (currentSort.key === key) { currentSort.dir *= -1; }
+  else { currentSort = { key, dir: key==='ticker'||key==='company' ? 1 : -1 }; }
   document.querySelectorAll('thead th').forEach(th => {
     th.classList.remove('sorted');
-    const icon = th.querySelector('.sort-icon');
-    if (icon) icon.textContent = '⇅';
+    const ic = th.querySelector('.sort-icon'); if (ic) ic.textContent = '⇅';
   });
-  const ths = document.querySelectorAll('thead th');
   const keyMap = ['ticker','company','price','iv_rank','pc_ratio','score'];
   const idx = keyMap.indexOf(key);
-  if (idx >= 0) {
-    ths[idx].classList.add('sorted');
-    ths[idx].querySelector('.sort-icon').textContent = currentSort.dir === 1 ? '↑' : '↓';
-  }
+  const ths = document.querySelectorAll('thead th');
+  if (idx >= 0) { ths[idx].classList.add('sorted'); ths[idx].querySelector('.sort-icon').textContent = currentSort.dir===1?'↑':'↓'; }
   renderTable(filterResults(allResults));
 }
 
 function renderTable(rows) {
-  // Sort
   const k = currentSort.key, d = currentSort.dir;
-  const sorted = [...rows].sort((a, b) => {
-    const av = a[k], bv = b[k];
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
-    if (typeof av === 'string') return av.localeCompare(bv) * d;
-    return (av - bv) * d;
+  const sorted = [...rows].sort((a,b) => {
+    const av=a[k],bv=b[k];
+    if (av==null&&bv==null) return 0; if (av==null) return 1; if (bv==null) return -1;
+    if (typeof av==='string') return av.localeCompare(bv)*d;
+    return (av-bv)*d;
   });
-
   document.getElementById('table-count-badge').textContent =
-    sorted.length + (sorted.length !== allResults.length ? ` / ${allResults.length}` : '') + ' results';
-
-  const body = document.getElementById('table-body');
-  body.innerHTML = sorted.map(r => `
+    sorted.length+(sorted.length!==allResults.length?` / ${allResults.length}`:'')+' results';
+  document.getElementById('table-body').innerHTML = sorted.map(r => `
     <tr>
       <td class="td-ticker">${r.ticker}</td>
       <td><span class="td-company">${r.company}</span></td>
-      <td class="td-price">${r.price ? '$' + r.price.toLocaleString('en-US',{minimumFractionDigits:2}) : '<span class="na-val">—</span>'}</td>
+      <td class="td-price">${r.price?'$'+r.price.toLocaleString('en-US',{minimumFractionDigits:2}):'<span class="na-val">—</span>'}</td>
       <td class="td-iv">
-        <span class="iv-val ${ivClass(r.iv_rank)}">${r.iv_rank != null ? r.iv_rank + '%' + (r.iv_source==='yfinance_approx'?'~':'') : '<span class="na-val">—</span>'}</span>
+        <span class="iv-val ${ivClass(r.iv_rank)}">${r.iv_rank!=null?r.iv_rank+'%'+(r.iv_source==='yfinance_approx'?'~':''):'<span class="na-val">—</span>'}</span>
         <div class="iv-mini-track"><div class="iv-mini-fill" style="width:${r.iv_rank||0}%"></div></div>
       </td>
-      <td><span class="pc-val ${pcClass(r.pc_ratio)}">${r.pc_ratio != null ? r.pc_ratio : '<span class="na-val">—</span>'}</span></td>
+      <td><span class="pc-val ${pcClass(r.pc_ratio)}">${r.pc_ratio!=null?r.pc_ratio:'<span class="na-val">—</span>'}</span></td>
       <td>${scoreDots(r.score)}</td>
       <td>${setupBadge(r.setup)}</td>
-      <td>${earnBadge(r.earnings_status, r.earnings_date)}</td>
-    </tr>
-  `).join('');
+      <td>${earnBadge(r.earnings_status,r.earnings_date)}</td>
+    </tr>`).join('');
 }
 
-/* ── Sources ─────────────────────────────────────────────────────── */
 function renderSources(results) {
   const all = new Set();
-  results.forEach(r => (r.sources || []).forEach(s => all.add(s)));
-  const list = document.getElementById('source-list');
-  list.innerHTML = [...all].map(s =>
-    `<div><a href="${s}" target="_blank" rel="noopener">${s}</a></div>`
-  ).join('');
+  results.forEach(r => (r.sources||[]).forEach(s => all.add(s)));
+  document.getElementById('source-list').innerHTML = [...all].map(s =>
+    `<div><a href="${s}" target="_blank" rel="noopener">${s}</a></div>`).join('');
 }
 
-/* ─── Helpers ────────────────────────────────────────────────────── */
-function ivClass(v) {
-  if (v == null) return '';
-  if (v > 50)   return 'iv-high';
-  if (v >= 35)  return 'iv-mid';
-  return 'iv-low';
+/* ══════════════════════════════════════════════════════════════════
+   TTM SQUEEZE SCANNER
+══════════════════════════════════════════════════════════════════ */
+async function runSqueezeScan() {
+  const btn = document.getElementById('btn-squeeze');
+  btn.disabled = true; btn.textContent = '⏳ Scanning…';
+  try {
+    const res  = await fetch(`${API_BASE}/api/squeeze`);
+    const json = await res.json();
+    if (json.error) { alert('Squeeze error: ' + json.error); return; }
+    if (json.data)  renderSqueezeSection(json.data);
+  } catch (e) { alert('Could not reach backend: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '⚡ Scan Squeeze'; }
 }
 
-function pcClass(v) {
-  if (v == null) return '';
-  if (v < 0.70) return 'pc-bull';
-  if (v > 1.0)  return 'pc-bear';
-  return 'pc-neut';
+function renderSqueezeSection(data) {
+  allSqResults = data.results;
+  const ts = new Date(data.scan_time);
+  document.getElementById('sq-scan-time').textContent  = 'Updated ' + ts.toLocaleTimeString();
+  document.getElementById('sq-m-in').textContent        = data.in_squeeze;
+  document.getElementById('sq-m-fired').textContent     = data.fired;
+  document.getElementById('sq-m-bull').textContent      = data.bull_momentum;
+  document.getElementById('sq-m-bear').textContent      = data.bear_momentum;
+  document.getElementById('sq-metrics').style.display   = 'grid';
+  document.getElementById('sq-filter-bar').style.display= 'block';
+  document.getElementById('squeeze-empty').style.display= 'none';
+  renderSqGrid(allSqResults);
 }
+
+function setSqFilter(btn) {
+  document.querySelectorAll('[data-sq]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active'); sqFilter = btn.dataset.sq;
+  renderSqGrid(allSqResults);
+}
+
+function renderSqGrid(results) {
+  const filtered = results.filter(r => {
+    if (sqFilter === 'all')        return true;
+    if (sqFilter === 'fired')      return r.fired === true;
+    if (sqFilter === 'squeeze_on') return r.squeeze_on === true;
+    if (sqFilter === 'bull')       return (r.momentum_direction||'').startsWith('bull');
+    if (sqFilter === 'bear')       return (r.momentum_direction||'').startsWith('bear');
+    return true;
+  });
+
+  document.getElementById('sq-grid').innerHTML = filtered.map(r => {
+    let cardClass = 'sq-card', dotClr = 'var(--muted)', statusTxt = 'NO DATA', statusClr = 'var(--muted)';
+    if (r.fired) {
+      cardClass = 'sq-card sq-fired'; dotClr = 'var(--orange)';
+      statusTxt = '⚡ FIRED'; statusClr = 'var(--orange)';
+    } else if (r.squeeze_on === true) {
+      cardClass = 'sq-card sq-on'; dotClr = 'var(--red)';
+      statusTxt = '● SQUEEZE'; statusClr = 'var(--red)';
+    } else if (r.squeeze_on === false) {
+      dotClr = 'var(--green)'; statusTxt = '○ CLEAR'; statusClr = 'var(--muted)';
+    }
+
+    const dir = r.momentum_direction || '';
+    let momArr = '—', momClr = 'var(--muted)', momLbl = '';
+    if      (dir === 'bull_strong') { momArr = '▲▲'; momClr = 'var(--green)';  momLbl = 'strong bull'; }
+    else if (dir === 'bull_weak')   { momArr = '▲';  momClr = '#a5d6a7';       momLbl = 'bull fading'; }
+    else if (dir === 'bear_strong') { momArr = '▼▼'; momClr = 'var(--red)';    momLbl = 'strong bear'; }
+    else if (dir === 'bear_weak')   { momArr = '▼';  momClr = '#f28b82';       momLbl = 'bear fading'; }
+    else if (dir === 'neutral')     { momArr = '●';  momClr = 'var(--yellow)'; momLbl = 'neutral'; }
+
+    return `
+      <div class="${cardClass}">
+        <div class="sq-ticker">${r.ticker}</div>
+        <div class="sq-company">${r.company}</div>
+        <div class="sq-dot-row">
+          <span class="sq-dot" style="background:${dotClr}"></span>
+          <span class="sq-status" style="color:${statusClr}">${statusTxt}</span>
+        </div>
+        <div class="sq-mom" style="color:${momClr}">${momArr}</div>
+        ${momLbl ? `<div class="sq-mom-lbl">${momLbl}</div>` : ''}
+        ${r.error ? `<div class="sq-err">${r.error.slice(0,28)}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+/* ── Shared helpers ──────────────────────────────────────────────── */
+function ivClass(v) { if(v==null)return''; if(v>50)return'iv-high'; if(v>=35)return'iv-mid'; return'iv-low'; }
+function pcClass(v) { if(v==null)return''; if(v<0.70)return'pc-bull'; if(v>1.0)return'pc-bear'; return'pc-neut'; }
 
 function scoreDots(score) {
-  const colorClass = score === 4 ? 'filled-4' : score === 3 ? 'filled-3' : score === 2 ? 'filled-2' : score === 1 ? 'filled-1' : '';
-  return `<span class="score-dots">${[1,2,3,4].map(i =>
-    `<span class="score-dot ${i <= score ? colorClass : ''}"></span>`
-  ).join('')}&nbsp;<small style="color:var(--muted)">${score}/4</small></span>`;
+  const c = score===4?'filled-4':score===3?'filled-3':score===2?'filled-2':score===1?'filled-1':'';
+  return `<span class="score-dots">${[1,2,3,4].map(i=>`<span class="score-dot ${i<=score?c:''}"></span>`).join('')}&nbsp;<small style="color:var(--muted)">${score}/4</small></span>`;
 }
 
-function setupBadge(setup) {
-  const map = {
-    'Bull put spread':  'badge-bull',
-    'Bear call spread': 'badge-bear',
-    'High IV / neutral':'badge-highiv',
-    'Watch':            'badge-watch',
-    'No Data':          'badge-nodata',
-    'Error':            'badge-nodata',
-  };
-  const cls = map[setup] || 'badge-nodata';
-  return `<span class="badge ${cls}">${setup}</span>`;
+function setupBadge(s) {
+  const m={'Bull put spread':'badge-bull','Bear call spread':'badge-bear','High IV / neutral':'badge-highiv','Watch':'badge-watch','No Data':'badge-nodata','Error':'badge-nodata'};
+  return `<span class="badge ${m[s]||'badge-nodata'}">${s}</span>`;
 }
 
-function earnBadge(status, earnDate) {
-  if (status === 'earn_risk')   return `<span class="badge badge-earn" title="${earnDate || ''}">⚠ EARN RISK</span>`;
-  if (status === 'vol_crushed') return `<span class="badge badge-crush" title="${earnDate || ''}">💥 VOL CRUSHED</span>`;
-  if (status === 'clear')       return `<span style="color:var(--muted);font-size:11px">—</span>`;
+function earnBadge(status, d) {
+  if(status==='earn_risk')   return `<span class="badge badge-earn" title="${d||''}">⚠ EARN RISK</span>`;
+  if(status==='vol_crushed') return `<span class="badge badge-crush" title="${d||''}">💥 VOL CRUSHED</span>`;
+  if(status==='clear')       return `<span style="color:var(--muted);font-size:11px">—</span>`;
   return `<span style="color:var(--muted);font-size:11px">Unknown</span>`;
 }
 
-/* ─── Check for cached data on page load ─────────────────────────── */
+/* ── On load: check for cached options scan ──────────────────────── */
 (async () => {
   try {
-    const res = await fetch(`${API_BASE}/api/scan/cached`);
-    const json = await res.json();
-    if (json.cached && json.data) {
-      document.getElementById('btn-cached').style.display = 'inline-flex';
-    }
-  } catch (_) { /* backend not reachable yet */ }
+    const r = await fetch(`${API_BASE}/api/scan/cached`);
+    const j = await r.json();
+    if (j.cached && j.data) document.getElementById('btn-cached').style.display = 'inline-flex';
+  } catch (_) {}
 })();
 </script>
 </body>
