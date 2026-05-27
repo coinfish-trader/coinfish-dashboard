@@ -3,6 +3,7 @@ import json
 import time
 import threading
 import numpy as np
+import pandas as pd
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -442,4 +443,138 @@ def run_full_scan(progress_cb=None):
         "eligible_count":      eligible,
         "top_3":               top_3,
         "results":             results,
+    }
+
+
+# ── TTM Squeeze ───────────────────────────────────────────────────────────────
+
+def compute_ttm_squeeze(ticker):
+    """
+    TTM Squeeze on daily timeframe (John Carter / Simpler Trading methodology).
+
+    Squeeze ON  = Bollinger Bands (20, 2.0) are fully inside Keltner Channels (20, 1.5 ATR).
+    Momentum    = close - mean([(highest_high_20 + lowest_low_20)/2, SMA_20])
+    Direction   = bull_strong / bull_weak / bear_strong / bear_weak / neutral
+    Fired       = squeeze was ON last bar, is OFF this bar (the release signal).
+    """
+    try:
+        t    = yf.Ticker(ticker)
+        hist = t.history(period="3mo", interval="1d")
+
+        if len(hist) < 25:
+            return {
+                "ticker": ticker, "squeeze_on": None, "momentum": None,
+                "momentum_direction": None, "fired": False,
+                "error": "insufficient data",
+            }
+
+        close = hist["Close"].astype(float)
+        high  = hist["High"].astype(float)
+        low   = hist["Low"].astype(float)
+
+        n = 20
+
+        # Bollinger Bands
+        bb_mid   = close.rolling(n).mean()
+        bb_std   = close.rolling(n).std(ddof=0)
+        bb_upper = bb_mid + 2.0 * bb_std
+        bb_lower = bb_mid - 2.0 * bb_std
+
+        # Keltner Channels (EMA midline, ATR-based width)
+        kc_mid   = close.ewm(span=n, adjust=False).mean()
+        tr       = pd.concat([
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low  - close.shift(1)).abs(),
+        ], axis=1).max(axis=1)
+        atr      = tr.rolling(n).mean()
+        kc_upper = kc_mid + 1.5 * atr
+        kc_lower = kc_mid - 1.5 * atr
+
+        # Squeeze state
+        sq = (bb_upper < kc_upper) & (bb_lower > kc_lower)
+
+        current_sq = bool(sq.iloc[-1]) if not pd.isna(sq.iloc[-1]) else None
+        prev_sq    = bool(sq.iloc[-2]) if len(sq) > 1 and not pd.isna(sq.iloc[-2]) else None
+        fired      = (prev_sq is True) and (current_sq is False)
+
+        # Momentum
+        hh    = high.rolling(n).max()
+        ll    = low.rolling(n).min()
+        delta = close - ((hh + ll) / 2.0 + bb_mid) / 2.0
+
+        mom_cur  = float(delta.iloc[-1]) if not pd.isna(delta.iloc[-1]) else None
+        mom_prev = float(delta.iloc[-2]) if len(delta) > 1 and not pd.isna(delta.iloc[-2]) else None
+
+        if mom_cur is not None and mom_prev is not None:
+            if mom_cur > 0 and mom_cur > mom_prev:
+                direction = "bull_strong"
+            elif mom_cur > 0 and mom_cur <= mom_prev:
+                direction = "bull_weak"
+            elif mom_cur < 0 and mom_cur < mom_prev:
+                direction = "bear_strong"
+            elif mom_cur < 0 and mom_cur >= mom_prev:
+                direction = "bear_weak"
+            else:
+                direction = "neutral"
+        else:
+            direction = None
+
+        return {
+            "ticker":             ticker,
+            "squeeze_on":         current_sq,
+            "momentum":           round(mom_cur, 4) if mom_cur is not None else None,
+            "momentum_direction": direction,
+            "fired":              fired,
+            "error":              None,
+        }
+
+    except Exception as exc:
+        return {
+            "ticker":             ticker,
+            "squeeze_on":         None,
+            "momentum":           None,
+            "momentum_direction": None,
+            "fired":              False,
+            "error":              str(exc),
+        }
+
+
+def run_squeeze_scan():
+    """Run TTM Squeeze scan on all WATCHLIST tickers. Returns summary + per-ticker results."""
+    results = []
+    lock    = threading.Lock()
+
+    def _scan(ticker):
+        r = compute_ttm_squeeze(ticker)
+        r["company"] = COMPANY_NAMES.get(ticker, ticker)
+        r["sector"]  = _sector(ticker)
+        with lock:
+            results.append(r)
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        list(ex.map(_scan, WATCHLIST))
+
+    # Sort: fired first, then squeeze_on, then by momentum absolute value
+    results.sort(
+        key=lambda x: (
+            1 if x.get("fired")      else 0,
+            1 if x.get("squeeze_on") else 0,
+            abs(x.get("momentum") or 0),
+        ),
+        reverse=True,
+    )
+
+    in_squeeze    = sum(1 for r in results if r.get("squeeze_on") is True)
+    fired_count   = sum(1 for r in results if r.get("fired") is True)
+    bull_count    = sum(1 for r in results if (r.get("momentum_direction") or "").startswith("bull"))
+    bear_count    = sum(1 for r in results if (r.get("momentum_direction") or "").startswith("bear"))
+
+    return {
+        "scan_time":     datetime.now().isoformat(),
+        "in_squeeze":    in_squeeze,
+        "fired":         fired_count,
+        "bull_momentum": bull_count,
+        "bear_momentum": bear_count,
+        "results":       results,
     }
