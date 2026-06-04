@@ -296,10 +296,14 @@ def fetch_squeeze(ticker):
         cur_mom  = float(momentum.iloc[-1])
         prev_mom = float(momentum.iloc[-2]) if len(momentum) >= 2 else cur_mom
 
-        if cur_mom > 0:
-            squeeze_dir = "bull" if cur_mom >= prev_mom else "bull_fading"
-        elif cur_mom < 0:
-            squeeze_dir = "bear" if cur_mom <= prev_mom else "bear_fading"
+        if cur_mom > 0 and cur_mom > prev_mom:
+            squeeze_dir = "bull_strong"
+        elif cur_mom > 0 and cur_mom <= prev_mom:
+            squeeze_dir = "bull_weak"
+        elif cur_mom < 0 and cur_mom < prev_mom:
+            squeeze_dir = "bear_strong"
+        elif cur_mom < 0 and cur_mom >= prev_mom:
+            squeeze_dir = "bear_weak"
         else:
             squeeze_dir = "neutral"
 
