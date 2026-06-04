@@ -245,6 +245,86 @@ def fetch_iv_rank_approx(ticker):
     except Exception as exc:
         return None, f"yfinance IV approx: {exc}"
 
+# ── TTM Squeeze ────────────────────────────────────────────────────────
+def fetch_squeeze(ticker):
+    """
+    Calculates TTM Squeeze using Bollinger Bands vs Keltner Channels.
+
+    Squeeze ON  = BB is entirely inside the KC (low volatility coiling).
+    Squeeze OFF = BB has broken outside KC (energy releasing).
+
+    Momentum direction uses the TTM momentum oscillator:
+      val = close - avg(highest_high_20, lowest_low_20, SMA_20)
+    Positive and growing  → 'bull'
+    Positive but fading   → 'bull_fading'
+    Negative and falling  → 'bear'
+    Negative but rising   → 'bear_fading'
+
+    Returns: (squeeze_on: bool|None, squeeze_dir: str|None, error: str|None)
+    """
+    try:
+        t = yf.Ticker(ticker)
+        hist = t.history(period="3mo")
+        if len(hist) < 25:
+            return None, None, "insufficient history"
+
+        close = hist["Close"]
+        high  = hist["High"]
+        low   = hist["Low"]
+        n = 20
+
+        # ── Bollinger Bands (20, 2.0) ──────────────────────────────
+        sma      = close.rolling(n).mean()
+        std      = close.rolling(n).std(ddof=0)
+        bb_upper = sma + 2.0 * std
+        bb_lower = sma - 2.0 * std
+
+        # ── True Range and ATR ─────────────────────────────────────
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low  - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr = tr.rolling(n).mean()
+
+        # ── Keltner Channels (20 EMA, 1.5x ATR) ───────────────────
+        kc_mid   = close.ewm(span=n, adjust=False).mean()
+        kc_upper = kc_mid + 1.5 * atr
+        kc_lower = kc_mid - 1.5 * atr
+
+        # ── Current bar values ─────────────────────────────────────
+        cur_bb_upper = float(bb_upper.iloc[-1])
+        cur_bb_lower = float(bb_lower.iloc[-1])
+        cur_kc_upper = float(kc_upper.iloc[-1])
+        cur_kc_lower = float(kc_lower.iloc[-1])
+
+        if any(np.isnan([cur_bb_upper, cur_bb_lower, cur_kc_upper, cur_kc_lower])):
+            return None, None, "NaN in squeeze calculation"
+
+        squeeze_on = (cur_bb_lower > cur_kc_lower) and (cur_bb_upper < cur_kc_upper)
+
+        # ── TTM Momentum oscillator ────────────────────────────────
+        highest_high = high.rolling(n).max()
+        lowest_low   = low.rolling(n).min()
+        momentum     = close - ((highest_high + lowest_low) / 2 + sma) / 2
+
+        cur_mom  = float(momentum.iloc[-1])
+        prev_mom = float(momentum.iloc[-2]) if len(momentum) >= 2 else cur_mom
+
+        if cur_mom > 0:
+            squeeze_dir = "bull" if cur_mom >= prev_mom else "bull_fading"
+        elif cur_mom < 0:
+            squeeze_dir = "bear" if cur_mom <= prev_mom else "bear_fading"
+        else:
+            squeeze_dir = "neutral"
+
+        return squeeze_on, squeeze_dir, None
+
+    except Exception as exc:
+        return None, None, f"squeeze: {exc}"
+
+# ── Earnings ───────────────────────────────────────────────────────────
 def fetch_earnings_status(ticker):
     try:
         t = yf.Ticker(ticker)
@@ -298,7 +378,7 @@ def fetch_earnings_status(ticker):
     except Exception:
         return None, "unknown"
 
-def compute_score(iv_rank, pc_ratio):
+def compute_score(iv_rank, pc_ratio, squeeze_on, squeeze_dir):
     score = 0
     if iv_rank is not None:
         if iv_rank > 50:
@@ -310,6 +390,9 @@ def compute_score(iv_rank, pc_ratio):
             score += 2
         elif pc_ratio <= 0.80:
             score += 1
+    # Squeeze bonus: loaded and pointing up = +1
+    if squeeze_on and squeeze_dir in ("bull", "bull_fading"):
+        score += 1
     return score
 
 def compute_setup(iv_rank, pc_ratio):
@@ -333,6 +416,8 @@ def scan_ticker(ticker):
         "iv_source":       None,
         "pc_ratio":        None,
         "pc_source":       None,
+        "squeeze_on":      None,
+        "squeeze_dir":     None,
         "earnings_date":   None,
         "earnings_status": "unknown",
         "score":           0,
@@ -341,6 +426,7 @@ def scan_ticker(ticker):
         "errors":          [],
     }
 
+    # Price
     try:
         info = yf.Ticker(ticker).fast_info
         p = getattr(info, "last_price", None) or getattr(info, "regularMarketPrice", None)
@@ -349,6 +435,7 @@ def scan_ticker(ticker):
     except Exception:
         pass
 
+    # Barchart IV + P/C
     bc_url = f"https://www.barchart.com/stocks/quotes/{ticker}/put-call-ratios"
     result["sources"].append(bc_url)
 
@@ -364,6 +451,7 @@ def scan_ticker(ticker):
         result["pc_ratio"]  = pc_ratio
         result["pc_source"] = "barchart"
 
+    # yfinance P/C fallback
     if result["pc_ratio"] is None:
         yf_pc, yf_pc_err = fetch_pc_ratio_yfinance(ticker)
         if yf_pc is not None:
@@ -373,6 +461,7 @@ def scan_ticker(ticker):
         else:
             result["errors"].append(yf_pc_err or "yfinance P/C unavailable")
 
+    # yfinance IV fallback
     if result["iv_rank"] is None:
         yf_iv, yf_iv_err = fetch_iv_rank_approx(ticker)
         if yf_iv is not None:
@@ -382,11 +471,22 @@ def scan_ticker(ticker):
         else:
             result["errors"].append(yf_iv_err or "yfinance IV approx unavailable")
 
+    # TTM Squeeze
+    sq_on, sq_dir, sq_err = fetch_squeeze(ticker)
+    result["squeeze_on"]  = sq_on
+    result["squeeze_dir"] = sq_dir
+    if sq_err:
+        result["errors"].append(sq_err)
+
+    # Earnings
     earn_date, earn_status = fetch_earnings_status(ticker)
     result["earnings_date"]   = earn_date
     result["earnings_status"] = earn_status
 
-    result["score"] = compute_score(result["iv_rank"], result["pc_ratio"])
+    result["score"] = compute_score(
+        result["iv_rank"], result["pc_ratio"],
+        result["squeeze_on"], result["squeeze_dir"]
+    )
     result["setup"] = compute_setup(result["iv_rank"], result["pc_ratio"])
 
     return result
@@ -417,6 +517,7 @@ def run_full_scan(progress_cb=None):
                     "sector": _sector(t), "price": None,
                     "iv_rank": None, "iv_source": None,
                     "pc_ratio": None, "pc_source": None,
+                    "squeeze_on": None, "squeeze_dir": None,
                     "earnings_date": None, "earnings_status": "unknown",
                     "score": 0, "setup": "Error",
                     "sources": [], "errors": [str(exc)],
@@ -434,6 +535,7 @@ def run_full_scan(progress_cb=None):
     earn_risk   = sum(1 for r in results if r["earnings_status"] == "earn_risk")
     vol_crushed = sum(1 for r in results if r["earnings_status"] == "vol_crushed")
     eligible    = sum(1 for r in results if r["earnings_status"] not in ("earn_risk", "vol_crushed"))
+    squeeze_count = sum(1 for r in results if r["squeeze_on"] is True)
 
     return {
         "scan_time":           datetime.now().isoformat(),
@@ -441,140 +543,7 @@ def run_full_scan(progress_cb=None):
         "earnings_risk_count": earn_risk,
         "vol_crushed_count":   vol_crushed,
         "eligible_count":      eligible,
+        "squeeze_count":       squeeze_count,
         "top_3":               top_3,
         "results":             results,
-    }
-
-
-# ── TTM Squeeze ───────────────────────────────────────────────────────────────
-
-def compute_ttm_squeeze(ticker):
-    """
-    TTM Squeeze on daily timeframe (John Carter / Simpler Trading methodology).
-
-    Squeeze ON  = Bollinger Bands (20, 2.0) are fully inside Keltner Channels (20, 1.5 ATR).
-    Momentum    = close - mean([(highest_high_20 + lowest_low_20)/2, SMA_20])
-    Direction   = bull_strong / bull_weak / bear_strong / bear_weak / neutral
-    Fired       = squeeze was ON last bar, is OFF this bar (the release signal).
-    """
-    try:
-        t    = yf.Ticker(ticker)
-        hist = t.history(period="3mo", interval="1d")
-
-        if len(hist) < 25:
-            return {
-                "ticker": ticker, "squeeze_on": None, "momentum": None,
-                "momentum_direction": None, "fired": False,
-                "error": "insufficient data",
-            }
-
-        close = hist["Close"].astype(float)
-        high  = hist["High"].astype(float)
-        low   = hist["Low"].astype(float)
-
-        n = 20
-
-        # Bollinger Bands
-        bb_mid   = close.rolling(n).mean()
-        bb_std   = close.rolling(n).std(ddof=0)
-        bb_upper = bb_mid + 2.0 * bb_std
-        bb_lower = bb_mid - 2.0 * bb_std
-
-        # Keltner Channels (EMA midline, ATR-based width)
-        kc_mid   = close.ewm(span=n, adjust=False).mean()
-        tr       = pd.concat([
-            high - low,
-            (high - close.shift(1)).abs(),
-            (low  - close.shift(1)).abs(),
-        ], axis=1).max(axis=1)
-        atr      = tr.rolling(n).mean()
-        kc_upper = kc_mid + 1.5 * atr
-        kc_lower = kc_mid - 1.5 * atr
-
-        # Squeeze state
-        sq = (bb_upper < kc_upper) & (bb_lower > kc_lower)
-
-        current_sq = bool(sq.iloc[-1]) if not pd.isna(sq.iloc[-1]) else None
-        prev_sq    = bool(sq.iloc[-2]) if len(sq) > 1 and not pd.isna(sq.iloc[-2]) else None
-        fired      = (prev_sq is True) and (current_sq is False)
-
-        # Momentum
-        hh    = high.rolling(n).max()
-        ll    = low.rolling(n).min()
-        delta = close - ((hh + ll) / 2.0 + bb_mid) / 2.0
-
-        mom_cur  = float(delta.iloc[-1]) if not pd.isna(delta.iloc[-1]) else None
-        mom_prev = float(delta.iloc[-2]) if len(delta) > 1 and not pd.isna(delta.iloc[-2]) else None
-
-        if mom_cur is not None and mom_prev is not None:
-            if mom_cur > 0 and mom_cur > mom_prev:
-                direction = "bull_strong"
-            elif mom_cur > 0 and mom_cur <= mom_prev:
-                direction = "bull_weak"
-            elif mom_cur < 0 and mom_cur < mom_prev:
-                direction = "bear_strong"
-            elif mom_cur < 0 and mom_cur >= mom_prev:
-                direction = "bear_weak"
-            else:
-                direction = "neutral"
-        else:
-            direction = None
-
-        return {
-            "ticker":             ticker,
-            "squeeze_on":         current_sq,
-            "momentum":           round(mom_cur, 4) if mom_cur is not None else None,
-            "momentum_direction": direction,
-            "fired":              fired,
-            "error":              None,
-        }
-
-    except Exception as exc:
-        return {
-            "ticker":             ticker,
-            "squeeze_on":         None,
-            "momentum":           None,
-            "momentum_direction": None,
-            "fired":              False,
-            "error":              str(exc),
-        }
-
-
-def run_squeeze_scan():
-    """Run TTM Squeeze scan on all WATCHLIST tickers. Returns summary + per-ticker results."""
-    results = []
-    lock    = threading.Lock()
-
-    def _scan(ticker):
-        r = compute_ttm_squeeze(ticker)
-        r["company"] = COMPANY_NAMES.get(ticker, ticker)
-        r["sector"]  = _sector(ticker)
-        with lock:
-            results.append(r)
-
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        list(ex.map(_scan, WATCHLIST))
-
-    # Sort: fired first, then squeeze_on, then by momentum absolute value
-    results.sort(
-        key=lambda x: (
-            1 if x.get("fired")      else 0,
-            1 if x.get("squeeze_on") else 0,
-            abs(x.get("momentum") or 0),
-        ),
-        reverse=True,
-    )
-
-    in_squeeze    = sum(1 for r in results if r.get("squeeze_on") is True)
-    fired_count   = sum(1 for r in results if r.get("fired") is True)
-    bull_count    = sum(1 for r in results if (r.get("momentum_direction") or "").startswith("bull"))
-    bear_count    = sum(1 for r in results if (r.get("momentum_direction") or "").startswith("bear"))
-
-    return {
-        "scan_time":     datetime.now().isoformat(),
-        "in_squeeze":    in_squeeze,
-        "fired":         fired_count,
-        "bull_momentum": bull_count,
-        "bear_momentum": bear_count,
-        "results":       results,
     }
