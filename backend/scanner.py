@@ -250,20 +250,18 @@ def fetch_squeeze(ticker):
         t = yf.Ticker(ticker)
         hist = t.history(period="3mo")
         if len(hist) < 25:
-            return None, None, "insufficient history"
+            return None, None, False, "insufficient history"
 
         close = hist["Close"]
         high  = hist["High"]
         low   = hist["Low"]
         n = 20
 
-        # ── Bollinger Bands (20, 2.0) ──────────────────────────────
         sma      = close.rolling(n).mean()
         std      = close.rolling(n).std(ddof=0)
         bb_upper = sma + 2.0 * std
         bb_lower = sma - 2.0 * std
 
-        # ── True Range and ATR ─────────────────────────────────────
         prev_close = close.shift(1)
         tr = pd.concat([
             high - low,
@@ -272,23 +270,25 @@ def fetch_squeeze(ticker):
         ], axis=1).max(axis=1)
         atr = tr.rolling(n).mean()
 
-        # ── Keltner Channels (20 EMA, 1.5x ATR) ───────────────────
         kc_mid   = close.ewm(span=n, adjust=False).mean()
         kc_upper = kc_mid + 1.5 * atr
         kc_lower = kc_mid - 1.5 * atr
 
-        # ── Current bar values ─────────────────────────────────────
         cur_bb_upper = float(bb_upper.iloc[-1])
         cur_bb_lower = float(bb_lower.iloc[-1])
         cur_kc_upper = float(kc_upper.iloc[-1])
         cur_kc_lower = float(kc_lower.iloc[-1])
 
         if any(np.isnan([cur_bb_upper, cur_bb_lower, cur_kc_upper, cur_kc_lower])):
-            return None, None, "NaN in squeeze calculation"
+            return None, None, False, "NaN in squeeze calculation"
 
-        squeeze_on = (cur_bb_lower > cur_kc_lower) and (cur_bb_upper < cur_kc_upper)
+        # Squeeze state for current AND previous bar
+        sq_series   = (bb_lower > kc_lower) & (bb_upper < kc_upper)
+        current_sq  = bool(sq_series.iloc[-1])
+        prev_sq     = bool(sq_series.iloc[-2]) if len(sq_series) >= 2 else current_sq
+        # Fired = squeeze was ON last bar, OFF this bar (the release signal)
+        fired       = (prev_sq is True) and (current_sq is False)
 
-        # ── TTM Momentum oscillator ────────────────────────────────
         highest_high = high.rolling(n).max()
         lowest_low   = low.rolling(n).min()
         momentum     = close - ((highest_high + lowest_low) / 2 + sma) / 2
@@ -303,10 +303,10 @@ def fetch_squeeze(ticker):
         else:
             squeeze_dir = "neutral"
 
-        return squeeze_on, squeeze_dir, None
+        return current_sq, squeeze_dir, fired, None
 
     except Exception as exc:
-        return None, None, f"squeeze: {exc}"
+        return None, None, False, f"squeeze: {exc}"
 
 # Earnings
 def fetch_earnings_status(ticker):
@@ -456,7 +456,7 @@ def scan_ticker(ticker):
             result["errors"].append(yf_iv_err or "yfinance IV approx unavailable")
 
     # TTM Squeeze
-    sq_on, sq_dir, sq_err = fetch_squeeze(ticker)
+    sq_on, sq_dir, sq_fired, sq_err = fetch_squeeze(ticker)
     result["squeeze_on"]  = sq_on
     result["squeeze_dir"] = sq_dir
     if sq_err:
@@ -543,16 +543,14 @@ def run_squeeze_scan():
     lock = threading.Lock()
 
     def _scan(ticker):
-        sq_on, sq_dir, sq_err = fetch_squeeze(ticker)
-        # Detect fired: squeeze was on last bar, now off — approximate by
-        # checking if squeeze_on is False but direction still has momentum
-        fired = (sq_on is False) and (sq_dir is not None) and (sq_dir != "neutral")
+        sq_on, sq_dir, fired, sq_err = fetch_squeeze(ticker)
         r = {
             "ticker":             ticker,
             "company":            COMPANY_NAMES.get(ticker, ticker),
             "sector":             _sector(ticker),
             "squeeze_on":         sq_on,
             "squeeze_dir":        sq_dir,
+            "momentum_direction": sq_dir,
             "fired":              fired,
             "error":              sq_err,
         }
