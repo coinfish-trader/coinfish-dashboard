@@ -1,3 +1,16 @@
+"""
+Coinfish Dashboard — Flask API
+
+Endpoints:
+  GET  /api/health             — liveness check
+  GET  /api/watchlist          — return the 56-ticker watchlist
+  GET  /api/scan/stream        — SSE: streams per-ticker progress then final results
+  GET  /api/scan/cached        — return last cached scan without re-running
+  GET  /api/ticker/<SYMBOL>    — on-demand single-ticker scan
+  GET  /api/squeeze/stream     — SSE: streams TTM squeeze scan progress then results
+  GET  /api/squeeze/cached     — return last cached squeeze scan without re-running
+"""
+
 import json
 import time
 import threading
@@ -6,7 +19,8 @@ import os
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
-from scanner import run_full_scan, scan_ticker, run_squeeze_scan, WATCHLIST
+from scanner import run_full_scan, scan_ticker, WATCHLIST
+from squeeze import run_squeeze_scan
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -18,6 +32,14 @@ _cache = {
 }
 _cache_lock   = threading.Lock()
 CACHE_TTL_SEC = 1800
+
+# ── Squeeze scan cache ────────────────────────────────────────────────────────
+_sq_cache = {
+    "results":    None,
+    "timestamp":  None,
+    "is_scanning": False,
+}
+_sq_cache_lock = threading.Lock()
 
 @app.route("/api/health")
 def health():
@@ -120,14 +142,6 @@ def scan_stream():
         },
     )
 
-@app.route("/api/squeeze")
-def squeeze_scan():
-    try:
-        data = run_squeeze_scan()
-        return jsonify({"data": data, "error": None})
-    except Exception as exc:
-        return jsonify({"data": None, "error": str(exc)}), 500
-
 @app.route("/api/ticker/<symbol>")
 def single_ticker(symbol):
     symbol = symbol.upper().strip()
@@ -135,6 +149,94 @@ def single_ticker(symbol):
         return jsonify({"error": "Invalid ticker symbol"}), 400
     result = scan_ticker(symbol)
     return jsonify(result)
+
+
+# ── Squeeze scanner routes ────────────────────────────────────────────────────
+
+@app.route("/api/squeeze/cached")
+def get_squeeze_cached():
+    with _sq_cache_lock:
+        if _sq_cache["results"] is not None:
+            age = time.time() - (_sq_cache["timestamp"] or 0)
+            return jsonify({
+                "cached":      True,
+                "age_seconds": round(age),
+                "fresh":       age < CACHE_TTL_SEC,
+                "data":        _sq_cache["results"],
+            })
+    return jsonify({"cached": False, "data": None})
+
+
+@app.route("/api/squeeze/stream")
+def squeeze_stream():
+    def generate():
+        if _is_sq_cache_fresh():
+            with _sq_cache_lock:
+                payload = _sq_cache["results"]
+            yield _sse({"type": "cached", "data": payload})
+            return
+
+        with _sq_cache_lock:
+            if _sq_cache["is_scanning"]:
+                yield _sse({"type": "error", "message": "Squeeze scan already running. Try /api/squeeze/cached."})
+                return
+            _sq_cache["is_scanning"] = True
+
+        events      = []
+        events_lock = threading.Lock()
+        sq_result   = [None]
+        sq_error    = [None]
+
+        def progress_cb(ticker, completed, total, result):
+            with events_lock:
+                events.append({
+                    "type":      "progress",
+                    "ticker":    ticker,
+                    "completed": completed,
+                    "total":     total,
+                    "result":    result,
+                })
+
+        def do_scan():
+            try:
+                sq_result[0] = run_squeeze_scan(progress_cb)
+            except Exception as exc:
+                sq_error[0] = str(exc)
+
+        yield _sse({"type": "started", "total": len(WATCHLIST)})
+        scan_thread = threading.Thread(target=do_scan, daemon=True)
+        scan_thread.start()
+
+        sent = 0
+        try:
+            while scan_thread.is_alive() or sent < len(events):
+                with events_lock:
+                    while sent < len(events):
+                        yield _sse(events[sent])
+                        sent += 1
+                if scan_thread.is_alive():
+                    time.sleep(0.15)
+            scan_thread.join()
+            if sq_error[0]:
+                yield _sse({"type": "error", "message": sq_error[0]})
+            else:
+                with _sq_cache_lock:
+                    _sq_cache["results"]   = sq_result[0]
+                    _sq_cache["timestamp"] = time.time()
+                yield _sse({"type": "complete", "data": sq_result[0]})
+        finally:
+            with _sq_cache_lock:
+                _sq_cache["is_scanning"] = False
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":        "keep-alive",
+        },
+    )
 
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
@@ -145,6 +247,14 @@ def _is_cache_fresh() -> bool:
             _cache["results"] is not None
             and _cache["timestamp"] is not None
             and (CACHE_TTL_SEC == 0 or time.time() - _cache["timestamp"] < CACHE_TTL_SEC)
+        )
+
+def _is_sq_cache_fresh() -> bool:
+    with _sq_cache_lock:
+        return (
+            _sq_cache["results"] is not None
+            and _sq_cache["timestamp"] is not None
+            and (CACHE_TTL_SEC == 0 or time.time() - _sq_cache["timestamp"] < CACHE_TTL_SEC)
         )
 
 if __name__ == "__main__":
