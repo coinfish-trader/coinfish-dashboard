@@ -358,6 +358,29 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 .sq-not-scanned h3 { font-size: 14px; color: var(--text); margin-bottom: 6px; }
 .sq-not-scanned p  { font-size: 12px; }
 .sq-empty { text-align: center; padding: 28px; color: var(--muted); font-size: 13px; }
+.sq-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.sq-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.sq-card.state-fired-bull { border-left-color: var(--green); }
+.sq-card.state-fired-bear { border-left-color: var(--red); }
+.sq-card.state-squeezing  { border-left-color: var(--squeeze); }
+.sq-card.state-postfire   { border-left-color: var(--blue); }
+.sq-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.sq-card-ticker { font-size: 22px; font-weight: 800; color: var(--white); line-height: 1; }
+.sq-card-co { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.sq-card-price { font-size: 13px; color: var(--text); margin: 10px 0; font-variant-numeric: tabular-nums; }
+.sq-card-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.sq-card-row .lbl { font-size: 11px; color: var(--muted); }
+.sq-card-read { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text); }
 </style>
 </head>
 <body>
@@ -916,47 +939,37 @@ function renderSqueezeSection(data) {
   const ts = new Date(data.scan_time);
 
   document.getElementById('sq-content').innerHTML = `
-    <div class="table-wrap">
-      <div class="table-toolbar">
-        <button class="filter-btn active" data-sqf="actionable" onclick="setSqFilter(this)">Actionable</button>
-        <button class="filter-btn"        data-sqf="squeezing"  onclick="setSqFilter(this)">Squeezing</button>
-        <button class="filter-btn"        data-sqf="fired"      onclick="setSqFilter(this)">Fired</button>
-        <button class="filter-btn"        data-sqf="all"        onclick="setSqFilter(this)">All</button>
-        <span style="margin-left:auto;font-size:11px;color:var(--muted)">
-          Scanned ${ts.toLocaleString()}
-        </span>
-      </div>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th>Company</th>
-              <th>Sector</th>
-              <th>Price</th>
-              <th>State</th>
-              <th>Momentum</th>
-              <th>Bars Squeezed</th>
-              <th>Read</th>
-            </tr>
-          </thead>
-          <tbody id="sq-tbody"></tbody>
-        </table>
-      </div>
-    </div>`;
+    <div class="table-toolbar" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px">
+      <button class="filter-btn active" data-sqf="actionable" onclick="setSqFilter(this)">Actionable</button>
+      <button class="filter-btn"        data-sqf="squeezing"  onclick="setSqFilter(this)">Squeezing</button>
+      <button class="filter-btn"        data-sqf="fired"      onclick="setSqFilter(this)">Fired</button>
+      <button class="filter-btn"        data-sqf="all"        onclick="setSqFilter(this)">All</button>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted)">
+        Scanned ${ts.toLocaleString()}
+      </span>
+    </div>
+    <div class="sq-grid" id="sq-grid"></div>`;
 
   _sqFilter = 'actionable';
-  renderSqTable();
+  renderSqCards();
 }
 
 function setSqFilter(btn) {
   document.querySelectorAll('[data-sqf]').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   _sqFilter = btn.dataset.sqf;
-  renderSqTable();
+  renderSqCards();
 }
 
-function renderSqTable() {
+function _sqCardClass(r) {
+  const bull = (r.momentum_dir || '').startsWith('bullish');
+  if (r.squeeze_state === 'fired')          return bull ? 'state-fired-bull' : 'state-fired-bear';
+  if (r.squeeze_state === 'fired_recently') return 'state-postfire';
+  if (r.squeeze_state === 'squeezing')      return 'state-squeezing';
+  return '';
+}
+
+function renderSqCards() {
   const rows = sqResults.filter(r => {
     if (r.error) return _sqFilter === 'all';
     if (_sqFilter === 'all')        return true;
@@ -966,33 +979,41 @@ function renderSqTable() {
     return true;
   });
 
-  const tbody = document.getElementById('sq-tbody');
-  if (!tbody) return;
+  const grid = document.getElementById('sq-grid');
+  if (!grid) return;
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="sq-empty">No results for this filter.</td></tr>`;
+    grid.innerHTML = `<div class="sq-empty" style="grid-column:1/-1">No results for this filter.</div>`;
     return;
   }
 
-  tbody.innerHTML = rows.map(r => {
+  grid.innerHTML = rows.map(r => {
     if (r.error) return `
-      <tr>
-        <td class="td-ticker">${r.ticker}</td>
-        <td colspan="7" class="na-val" style="font-size:12px">Error: ${r.error_msg || 'unknown'}</td>
-      </tr>`;
+      <div class="sq-card">
+        <div class="sq-card-top"><div class="sq-card-ticker">${r.ticker}</div></div>
+        <div class="na-val" style="font-size:12px;margin-top:8px">Error: ${r.error_msg || 'unknown'}</div>
+      </div>`;
+    const read = _sqRead(r);
     return `
-      <tr>
-        <td class="td-ticker">${r.ticker}</td>
-        <td><span class="td-company">${r.company || ''}</span></td>
-        <td><span class="td-company">${r.sector  || ''}</span></td>
-        <td class="td-price">${r.price ? '$' + r.price.toFixed(2) : '<span class="na-val">—</span>'}</td>
-        <td>${_sqStateBadge(r)}</td>
-        <td>${_sqMomentum(r)}</td>
-        <td style="color:var(--muted);font-size:12px">
-          ${r.squeeze_state === 'squeezing' && r.bars_in_squeeze ? r.bars_in_squeeze + ' bars' : '—'}
-        </td>
-        <td style="font-size:12px;color:var(--muted)">${_sqRead(r)}</td>
-      </tr>`;
+      <div class="sq-card ${_sqCardClass(r)}">
+        <div class="sq-card-top">
+          <div>
+            <div class="sq-card-ticker">${r.ticker}</div>
+            <div class="sq-card-co">${r.company || ''} · ${r.sector || ''}</div>
+          </div>
+          ${_sqStateBadge(r)}
+        </div>
+        <div class="sq-card-price">${r.price ? '$' + r.price.toFixed(2) : '<span class="na-val">—</span>'}</div>
+        <div class="sq-card-row">
+          <span class="lbl">Momentum</span>
+          <span>${_sqMomentum(r)}</span>
+        </div>
+        <div class="sq-card-row">
+          <span class="lbl">Bars squeezed</span>
+          <span style="font-size:12px;color:var(--muted)">${r.squeeze_state === 'squeezing' && r.bars_in_squeeze ? r.bars_in_squeeze + ' bars' : '—'}</span>
+        </div>
+        ${read ? `<div class="sq-card-read">${read}</div>` : ''}
+      </div>`;
   }).join('');
 }
 
