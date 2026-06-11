@@ -381,6 +381,28 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 .sq-card-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .sq-card-row .lbl { font-size: 11px; color: var(--muted); }
 .sq-card-read { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text); }
+
+/* ── Trend / debit-spread scanner ──────────────────────────────────── */
+:root { --trend: #58a6ff; }
+.trend-section { margin-top: 28px; }
+.trend-title { font-size: 14px; font-weight: 700; color: var(--trend); text-transform: uppercase; letter-spacing: .06em; }
+.btn-trend { background: var(--trend); color: #00111f; font-weight: 700; }
+.btn-trend:disabled { opacity: .45; }
+.tr-prog-fill { height: 100%; background: linear-gradient(90deg, var(--trend), #a5d6ff); border-radius: 3px; transition: width .25s ease; width: 0%; }
+.tr-card.qualified { border-left-color: var(--green); }
+.tr-qual-badge { background: var(--green-bg); color: var(--green); }
+.tr-score-badge { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+.tr-checks { margin-top: 10px; }
+.tr-check { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
+.tr-check .ck { width: 16px; text-align: center; font-weight: 700; }
+.tr-check .val { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tr-pass { color: var(--green); }
+.tr-fail { color: var(--muted); }
+.tr-spread { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--green); background: var(--green-bg); border-radius: 6px; font-size: 12px; }
+.tr-spread .hd { font-weight: 700; color: var(--green); margin-bottom: 6px; }
+.tr-spread .row { display: flex; justify-content: space-between; margin-top: 3px; }
+.tr-spread .row .k { color: var(--muted); }
+.tr-spread .row .v { color: var(--text); font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -549,6 +571,48 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
     </div>
 
   </div><!-- /squeeze-section -->
+
+  <!-- ── Trend / Debit Spread Scanner (independent) ────────────────── -->
+  <div class="trend-section">
+
+    <div class="squeeze-header">
+      <div class="trend-title">📈 Trend · Debit Spreads</div>
+      <div class="section-badge" id="tr-badge">Not scanned</div>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" id="btn-tr-cached" onclick="loadTrendCached()" style="display:none">
+        ↩ Load Cached
+      </button>
+      <button class="btn btn-trend" id="btn-tr-scan" onclick="startTrendScan()">
+        ▶ Run Trend Scan
+      </button>
+    </div>
+
+    <div id="tr-progress-wrap" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:14px">
+      <div class="progress-label">
+        Scanning <b id="tr-prog-done">0</b> / <b id="tr-prog-total">56</b> tickers…
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill tr-prog-fill" id="tr-prog-fill"></div>
+      </div>
+      <div class="progress-tickers" id="tr-prog-label"></div>
+    </div>
+
+    <div id="tr-content">
+      <div class="table-wrap">
+        <div class="sq-not-scanned">
+          <h3>Trend scanner not yet run</h3>
+          <p>Screens for: price &gt; 50 EMA · 9 EMA &gt; 21 EMA · MACD bullish · Force Index positive · IV Rank &lt; 50. Qualified names get a suggested 30–60 DTE bull call debit spread.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer" style="margin-top:10px">
+      <strong>Trend method:</strong>
+      All five must pass to qualify. Strikes are a starting point (buy ~ATM call, sell ~5% OTM, 30–60 DTE),
+      priced off the current chain via yfinance. Bid/ask can be stale — confirm live pricing in TastyTrade before placing.
+    </div>
+
+  </div><!-- /trend-section -->
 
 </div><!-- /page -->
 
@@ -1072,6 +1136,173 @@ function _sqRead(r) {
     const json = await res.json();
     if (json.cached && json.data) {
       document.getElementById('btn-sq-cached').style.display = 'inline-flex';
+    }
+  } catch (_) {}
+})();
+
+/* ─── TREND / DEBIT SPREAD SCANNER ───────────────────────────────────
+   Independent of the scans above. Uses /api/trend/stream + /api/trend/cached.
+───────────────────────────────────────────────────────────────────── */
+
+let trResults = [];
+let _trFilter = 'all';
+
+function startTrendScan() {
+  const btn = document.getElementById('btn-tr-scan');
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning…';
+  document.getElementById('tr-progress-wrap').style.display = 'block';
+  document.getElementById('tr-content').innerHTML =
+    '<div class="table-wrap"><div class="sq-not-scanned"><p>Scanning…</p></div></div>';
+
+  const es = new EventSource(`${API_BASE}/api/trend/stream`);
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'started') {
+      document.getElementById('tr-prog-total').textContent = msg.total;
+      return;
+    }
+    if (msg.type === 'progress') {
+      const pct = Math.round((msg.completed / msg.total) * 100);
+      document.getElementById('tr-prog-fill').style.width  = pct + '%';
+      document.getElementById('tr-prog-done').textContent  = msg.completed;
+      document.getElementById('tr-prog-total').textContent = msg.total;
+      const r = msg.result;
+      if (r && !r.error) {
+        document.getElementById('tr-prog-label').textContent =
+          `✓ ${msg.ticker} — ${r.qualified ? 'QUALIFIED' : (r.passed||0) + '/5'}`;
+      }
+      return;
+    }
+    if (msg.type === 'cached' || msg.type === 'complete') {
+      es.close(); renderTrendSection(msg.data); _resetTrBtn(); return;
+    }
+    if (msg.type === 'error') {
+      es.close(); alert('Trend scan error: ' + msg.message); _resetTrBtn(); return;
+    }
+  };
+  es.onerror = () => { es.close(); alert('Lost connection to backend during trend scan.'); _resetTrBtn(); };
+}
+
+function _resetTrBtn() {
+  const btn = document.getElementById('btn-tr-scan');
+  btn.disabled = false;
+  btn.textContent = '↺ Re-scan';
+  document.getElementById('tr-progress-wrap').style.display = 'none';
+}
+
+async function loadTrendCached() {
+  try {
+    const res = await fetch(`${API_BASE}/api/trend/cached`);
+    const json = await res.json();
+    if (json.cached && json.data) renderTrendSection(json.data);
+    else alert('No cached trend scan. Click Run Trend Scan.');
+  } catch (e) { alert('Could not reach backend.'); }
+}
+
+function renderTrendSection(data) {
+  trResults = data.results || [];
+  const q = data.qualified_count || 0;
+  const nm = data.near_miss_count || 0;
+  document.getElementById('tr-badge').textContent = `${q} qualified · ${nm} near-miss`;
+  document.getElementById('btn-tr-cached').style.display = 'inline-flex';
+  const ts = new Date(data.scan_time);
+
+  document.getElementById('tr-content').innerHTML = `
+    <div class="table-toolbar" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px">
+      <button class="filter-btn active" data-trf="all"       onclick="setTrFilter(this)">All</button>
+      <button class="filter-btn"        data-trf="qualified" onclick="setTrFilter(this)">Qualified</button>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted)">Scanned ${ts.toLocaleString()}</span>
+    </div>
+    <div class="sq-grid" id="tr-grid"></div>`;
+
+  _trFilter = 'all';
+  renderTrendCards();
+}
+
+function setTrFilter(btn) {
+  document.querySelectorAll('[data-trf]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _trFilter = btn.dataset.trf;
+  renderTrendCards();
+}
+
+function _trCheck(ok, label, valHtml) {
+  const ck = ok ? '<span class="ck tr-pass">✓</span>' : '<span class="ck tr-fail">✗</span>';
+  const cls = ok ? 'tr-pass' : 'tr-fail';
+  return `<div class="tr-check">${ck}<span class="${cls}">${label}</span>${valHtml ? `<span class="val">${valHtml}</span>` : ''}</div>`;
+}
+
+function _trSpreadBox(s) {
+  if (!s) return '';
+  const rr = s.risk_reward != null ? s.risk_reward + ' : 1' : '—';
+  const win = s.out_of_window ? ' <span style="color:var(--yellow)">(outside 30–60d)</span>' : '';
+  return `
+    <div class="tr-spread">
+      <div class="hd">Bull call debit spread</div>
+      <div class="row"><span class="k">Expiration</span><span class="v">${s.expiration} · ${s.dte}d${win}</span></div>
+      <div class="row"><span class="k">Buy / Sell</span><span class="v">${s.long_strike}c / ${s.short_strike}c</span></div>
+      <div class="row"><span class="k">Debit</span><span class="v">$${s.debit}</span></div>
+      <div class="row"><span class="k">Max profit / risk</span><span class="v">$${s.max_profit} / $${s.max_risk}</span></div>
+      <div class="row"><span class="k">Breakeven</span><span class="v">$${s.breakeven}</span></div>
+      <div class="row"><span class="k">Reward : risk</span><span class="v">${rr}</span></div>
+    </div>`;
+}
+
+function renderTrendCards() {
+  const rows = trResults.filter(r => {
+    if (r.error) return _trFilter === 'all';
+    if (_trFilter === 'qualified') return r.qualified;
+    return true;
+  });
+
+  const grid = document.getElementById('tr-grid');
+  if (!grid) return;
+  if (!rows.length) {
+    grid.innerHTML = `<div class="sq-empty" style="grid-column:1/-1">No results for this filter.</div>`;
+    return;
+  }
+
+  grid.innerHTML = rows.map(r => {
+    if (r.error) return `
+      <div class="sq-card">
+        <div class="sq-card-top"><div class="sq-card-ticker">${r.ticker}</div></div>
+        <div class="na-val" style="font-size:12px;margin-top:8px">Error: ${r.error_msg || 'unknown'}</div>
+      </div>`;
+    const c = r.conditions || {};
+    const badge = r.qualified
+      ? `<span class="badge tr-qual-badge">✓ QUALIFIED</span>`
+      : `<span class="badge tr-score-badge">${r.passed || 0}/5</span>`;
+    const ivVal = r.iv_rank != null ? r.iv_rank : '—';
+    return `
+      <div class="sq-card tr-card ${r.qualified ? 'qualified' : ''}">
+        <div class="sq-card-top">
+          <div>
+            <div class="sq-card-ticker">${r.ticker}</div>
+            <div class="sq-card-co">${r.company || ''} · ${r.sector || ''}</div>
+          </div>
+          ${badge}
+        </div>
+        <div class="sq-card-price">${r.price ? '$' + r.price.toFixed(2) : '<span class="na-val">—</span>'}</div>
+        <div class="tr-checks">
+          ${_trCheck(c.price_above_ema50, 'Price &gt; 50 EMA', '$' + (r.ema50 != null ? r.ema50 : '—'))}
+          ${_trCheck(c.ema9_above_ema21, '9 EMA &gt; 21 EMA', '')}
+          ${_trCheck(c.macd_bullish, 'MACD bullish', '')}
+          ${_trCheck(c.efi_positive, 'Force Index +', '')}
+          ${_trCheck(c.iv_below_50, 'IV Rank &lt; 50', ivVal)}
+        </div>
+        ${_trSpreadBox(r.spread)}
+      </div>`;
+  }).join('');
+}
+
+/* ── Check for cached trend data on page load ────────────────────── */
+(async () => {
+  try {
+    const res = await fetch(`${API_BASE}/api/trend/cached`);
+    const json = await res.json();
+    if (json.cached && json.data) {
+      document.getElementById('btn-tr-cached').style.display = 'inline-flex';
     }
   } catch (_) {}
 })();
