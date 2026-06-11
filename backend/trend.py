@@ -15,6 +15,7 @@ IV Rank reuses the same source as the options scanner (Barchart primary,
 yfinance HV approximation fallback).
 """
 
+import time
 import threading
 import pandas as pd
 import numpy as np
@@ -59,12 +60,23 @@ def _mid_price(row):
         return None
 
 
-def suggest_debit_spread(ticker, price):
+def suggest_debit_spread(ticker, price, attempts=3):
     """
     Propose a 30-60 DTE bull call debit spread:
       buy ~ATM call, sell a higher (~5% OTM) call.
+    Retries a few times because Yahoo's options endpoint rate-limits
+    cloud IPs harder than the price endpoint.
     Returns a dict or None if a spread can't be built.
     """
+    for attempt in range(attempts):
+        out = _try_spread(ticker, price)
+        if out is not None:
+            return out
+        time.sleep(0.8 * (attempt + 1))
+    return None
+
+
+def _try_spread(ticker, price):
     try:
         t = yf.Ticker(ticker)
         exps = t.options
@@ -196,7 +208,9 @@ def compute_trend(ticker: str) -> dict:
         passed = sum(1 for v in conds.values() if v)
         qualified = all(conds.values())
 
-        spread = suggest_debit_spread(ticker, price) if qualified else None
+        # Spread is fetched in a deferred sequential pass (see run_trend_scan)
+        # to avoid the concurrent options-endpoint rate limit.
+        spread = None
 
         return {
             "ticker":      ticker,
@@ -255,6 +269,13 @@ def run_trend_scan(progress_cb=None) -> dict:
             except Exception as exc:
                 t = futures[fut]
                 results.append(_err(t, str(exc)))
+
+    # Deferred spread pass: sequential (with retries) over qualified names only,
+    # so the options-endpoint calls don't get caught in the concurrent burst that
+    # Yahoo rate-limits from cloud IPs.
+    for r in results:
+        if not r.get("error") and r.get("qualified"):
+            r["spread"] = suggest_debit_spread(r["ticker"], r["price"])
 
     # Sort: qualified first, then by conditions passed (desc), then ticker
     results.sort(key=lambda x: (
