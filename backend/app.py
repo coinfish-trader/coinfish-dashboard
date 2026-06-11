@@ -21,6 +21,7 @@ from flask_cors import CORS
 
 from scanner import run_full_scan, scan_ticker, WATCHLIST
 from squeeze import run_squeeze_scan
+from trend import run_trend_scan
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -40,6 +41,14 @@ _sq_cache = {
     "is_scanning": False,
 }
 _sq_cache_lock = threading.Lock()
+
+# ── Trend scan cache ──────────────────────────────────────────────────────────
+_trend_cache = {
+    "results":    None,
+    "timestamp":  None,
+    "is_scanning": False,
+}
+_trend_cache_lock = threading.Lock()
 
 @app.route("/api/health")
 def health():
@@ -238,6 +247,93 @@ def squeeze_stream():
         },
     )
 
+# ── Trend / debit-spread scanner routes ───────────────────────────────────────
+
+@app.route("/api/trend/cached")
+def get_trend_cached():
+    with _trend_cache_lock:
+        if _trend_cache["results"] is not None:
+            age = time.time() - (_trend_cache["timestamp"] or 0)
+            return jsonify({
+                "cached":      True,
+                "age_seconds": round(age),
+                "fresh":       age < CACHE_TTL_SEC,
+                "data":        _trend_cache["results"],
+            })
+    return jsonify({"cached": False, "data": None})
+
+
+@app.route("/api/trend/stream")
+def trend_stream():
+    def generate():
+        if _is_trend_cache_fresh():
+            with _trend_cache_lock:
+                payload = _trend_cache["results"]
+            yield _sse({"type": "cached", "data": payload})
+            return
+
+        with _trend_cache_lock:
+            if _trend_cache["is_scanning"]:
+                yield _sse({"type": "error", "message": "Trend scan already running. Try /api/trend/cached."})
+                return
+            _trend_cache["is_scanning"] = True
+
+        events      = []
+        events_lock = threading.Lock()
+        tr_result   = [None]
+        tr_error    = [None]
+
+        def progress_cb(ticker, completed, total, result):
+            with events_lock:
+                events.append({
+                    "type":      "progress",
+                    "ticker":    ticker,
+                    "completed": completed,
+                    "total":     total,
+                    "result":    result,
+                })
+
+        def do_scan():
+            try:
+                tr_result[0] = run_trend_scan(progress_cb)
+            except Exception as exc:
+                tr_error[0] = str(exc)
+
+        yield _sse({"type": "started", "total": len(WATCHLIST)})
+        scan_thread = threading.Thread(target=do_scan, daemon=True)
+        scan_thread.start()
+
+        sent = 0
+        try:
+            while scan_thread.is_alive() or sent < len(events):
+                with events_lock:
+                    while sent < len(events):
+                        yield _sse(events[sent])
+                        sent += 1
+                if scan_thread.is_alive():
+                    time.sleep(0.15)
+            scan_thread.join()
+            if tr_error[0]:
+                yield _sse({"type": "error", "message": tr_error[0]})
+            else:
+                with _trend_cache_lock:
+                    _trend_cache["results"]   = tr_result[0]
+                    _trend_cache["timestamp"] = time.time()
+                yield _sse({"type": "complete", "data": tr_result[0]})
+        finally:
+            with _trend_cache_lock:
+                _trend_cache["is_scanning"] = False
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":        "keep-alive",
+        },
+    )
+
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
@@ -255,6 +351,14 @@ def _is_sq_cache_fresh() -> bool:
             _sq_cache["results"] is not None
             and _sq_cache["timestamp"] is not None
             and (CACHE_TTL_SEC == 0 or time.time() - _sq_cache["timestamp"] < CACHE_TTL_SEC)
+        )
+
+def _is_trend_cache_fresh() -> bool:
+    with _trend_cache_lock:
+        return (
+            _trend_cache["results"] is not None
+            and _trend_cache["timestamp"] is not None
+            and (CACHE_TTL_SEC == 0 or time.time() - _trend_cache["timestamp"] < CACHE_TTL_SEC)
         )
 
 if __name__ == "__main__":
