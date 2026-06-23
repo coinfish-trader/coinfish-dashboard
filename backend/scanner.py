@@ -19,14 +19,14 @@ except ImportError:
 WATCHLIST = [
     # Technology (11)
     "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA",
-    # Financials (10)
-    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V",
+    # Financials (11)
+    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA",
     # Energy (8)
     "XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO",
     # Healthcare (7)
     "LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG",
-    # Consumer (10)
-    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT", "MA",
+    # Consumer (9)
+    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT",
     # Industrials / Defense / Transportation (10)
     "RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP",
 ]
@@ -58,10 +58,10 @@ COMPANY_NAMES = {
 
 SECTORS = {
     "Tech":        ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA"],
-    "Financials":  ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V"],
+    "Financials":  ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA"],
     "Energy":      ["XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO"],
     "Healthcare":  ["LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG"],
-    "Consumer":    ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT", "MA"],
+    "Consumer":    ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT"],
     "Industrials": ["RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP"],
 }
 
