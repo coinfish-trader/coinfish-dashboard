@@ -17,12 +17,18 @@ except ImportError:
     HAS_CURL_CFFI = False
 
 WATCHLIST = [
-    "NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META",
-    "BAC", "WFC", "C", "JPM", "MS", "SCHW", "COF", "AXP", "GS",
-    "XOM", "SLB", "CVX", "OXY", "COP", "EOG", "VLO", "MPC",
-    "PFE", "MRK", "JNJ", "UNH", "BMY", "ABBV", "LLY", "TMO", "AMGN",
-    "WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD",
-    "HAL", "HON", "BA", "MMM", "RTX", "UPS", "GE", "CAT", "DE", "UNP", "LMT",
+    # Technology (11)
+    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA",
+    # Financials (10)
+    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V",
+    # Energy (8)
+    "XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO",
+    # Healthcare (7)
+    "LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG",
+    # Consumer (10)
+    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT", "MA",
+    # Industrials / Defense / Transportation (10)
+    "RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP",
 ]
 
 COMPANY_NAMES = {
@@ -46,15 +52,17 @@ COMPANY_NAMES = {
     "RTX": "RTX Corporation", "UPS": "United Parcel Service", "GE": "GE Aerospace",
     "CAT": "Caterpillar Inc", "DE": "Deere & Company", "UNP": "Union Pacific",
     "LMT": "Lockheed Martin",
+    "AVGO": "Broadcom Inc", "V": "Visa Inc", "ISRG": "Intuitive Surgical",
+    "MA": "Mastercard Inc", "ETN": "Eaton Corp", "PH": "Parker-Hannifin",
 }
 
 SECTORS = {
-    "Tech":        ["NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META"],
-    "Financials":  ["BAC", "WFC", "C", "JPM", "MS", "SCHW", "COF", "AXP", "GS"],
-    "Energy":      ["XOM", "SLB", "CVX", "OXY", "COP", "EOG", "VLO", "MPC"],
-    "Healthcare":  ["PFE", "MRK", "JNJ", "UNH", "BMY", "ABBV", "LLY", "TMO", "AMGN"],
-    "Consumer":    ["WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD"],
-    "Industrials": ["HAL", "HON", "BA", "MMM", "RTX", "UPS", "GE", "CAT", "DE", "UNP", "LMT"],
+    "Tech":        ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA"],
+    "Financials":  ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V"],
+    "Energy":      ["XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO"],
+    "Healthcare":  ["LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG"],
+    "Consumer":    ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT", "MA"],
+    "Industrials": ["RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP"],
 }
 
 def _sector(ticker):
