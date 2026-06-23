@@ -3,7 +3,6 @@ import json
 import time
 import threading
 import numpy as np
-import pandas as pd
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -21,7 +20,7 @@ WATCHLIST = [
     "NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META",
     "BAC", "WFC", "C", "JPM", "MS", "SCHW", "COF", "AXP", "GS",
     "XOM", "SLB", "CVX", "OXY", "COP", "EOG", "VLO", "MPC",
-    "PFE", "MRK", "JNJ", "BMY", "ABBV", "LLY", "TMO", "AMGN",
+    "PFE", "MRK", "JNJ", "UNH", "BMY", "ABBV", "LLY", "TMO", "AMGN",
     "WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD",
     "HAL", "HON", "BA", "MMM", "RTX", "UPS", "GE", "CAT", "DE", "UNP", "LMT",
 ]
@@ -37,6 +36,7 @@ COMPANY_NAMES = {
     "CVX": "Chevron Corp", "OXY": "Occidental Petroleum", "COP": "ConocoPhillips",
     "EOG": "EOG Resources", "VLO": "Valero Energy", "MPC": "Marathon Petroleum",
     "PFE": "Pfizer Inc", "MRK": "Merck & Co", "JNJ": "Johnson & Johnson",
+    "UNH": "UnitedHealth Group",
     "BMY": "Bristol-Myers Squibb", "ABBV": "AbbVie Inc", "LLY": "Eli Lilly",
     "TMO": "Thermo Fisher Scientific", "AMGN": "Amgen Inc", "WMT": "Walmart Inc",
     "NKE": "Nike Inc", "DIS": "Walt Disney Co", "SBUX": "Starbucks Corp",
@@ -52,7 +52,7 @@ SECTORS = {
     "Tech":        ["NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META"],
     "Financials":  ["BAC", "WFC", "C", "JPM", "MS", "SCHW", "COF", "AXP", "GS"],
     "Energy":      ["XOM", "SLB", "CVX", "OXY", "COP", "EOG", "VLO", "MPC"],
-    "Healthcare":  ["PFE", "MRK", "JNJ", "BMY", "ABBV", "LLY", "TMO", "AMGN"],
+    "Healthcare":  ["PFE", "MRK", "JNJ", "UNH", "BMY", "ABBV", "LLY", "TMO", "AMGN"],
     "Consumer":    ["WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD"],
     "Industrials": ["HAL", "HON", "BA", "MMM", "RTX", "UPS", "GE", "CAT", "DE", "UNP", "LMT"],
 }
@@ -245,74 +245,6 @@ def fetch_iv_rank_approx(ticker):
     except Exception as exc:
         return None, f"yfinance IV approx: {exc}"
 
-def fetch_squeeze(ticker):
-    try:
-        t = yf.Ticker(ticker)
-        hist = t.history(period="3mo")
-        if len(hist) < 25:
-            return None, None, False, "insufficient history"
-
-        close = hist["Close"]
-        high  = hist["High"]
-        low   = hist["Low"]
-        n = 20
-
-        sma      = close.rolling(n).mean()
-        std      = close.rolling(n).std(ddof=0)
-        bb_upper = sma + 2.0 * std
-        bb_lower = sma - 2.0 * std
-
-        prev_close = close.shift(1)
-        tr = pd.concat([
-            high - low,
-            (high - prev_close).abs(),
-            (low  - prev_close).abs(),
-        ], axis=1).max(axis=1)
-        atr = tr.rolling(n).mean()
-
-        kc_mid   = close.ewm(span=n, adjust=False).mean()
-        kc_upper = kc_mid + 1.5 * atr
-        kc_lower = kc_mid - 1.5 * atr
-
-        cur_bb_upper = float(bb_upper.iloc[-1])
-        cur_bb_lower = float(bb_lower.iloc[-1])
-        cur_kc_upper = float(kc_upper.iloc[-1])
-        cur_kc_lower = float(kc_lower.iloc[-1])
-
-        if any(np.isnan([cur_bb_upper, cur_bb_lower, cur_kc_upper, cur_kc_lower])):
-            return None, None, False, "NaN in squeeze calculation"
-
-        # Squeeze state for current AND previous bar
-        sq_series   = (bb_lower > kc_lower) & (bb_upper < kc_upper)
-        current_sq  = bool(sq_series.iloc[-1])
-        prev_sq     = bool(sq_series.iloc[-2]) if len(sq_series) >= 2 else current_sq
-        # Fired = squeeze was ON last bar, OFF this bar (the release signal)
-        fired       = (prev_sq is True) and (current_sq is False)
-
-        highest_high = high.rolling(n).max()
-        lowest_low   = low.rolling(n).min()
-        momentum     = close - ((highest_high + lowest_low) / 2 + sma) / 2
-
-        cur_mom  = float(momentum.iloc[-1])
-        prev_mom = float(momentum.iloc[-2]) if len(momentum) >= 2 else cur_mom
-
-        if cur_mom > 0 and cur_mom > prev_mom:
-            squeeze_dir = "bull_strong"
-        elif cur_mom > 0 and cur_mom <= prev_mom:
-            squeeze_dir = "bull_weak"
-        elif cur_mom < 0 and cur_mom < prev_mom:
-            squeeze_dir = "bear_strong"
-        elif cur_mom < 0 and cur_mom >= prev_mom:
-            squeeze_dir = "bear_weak"
-        else:
-            squeeze_dir = "neutral"
-
-        return current_sq, squeeze_dir, fired, None
-
-    except Exception as exc:
-        return None, None, False, f"squeeze: {exc}"
-
-# Earnings
 def fetch_earnings_status(ticker):
     try:
         t = yf.Ticker(ticker)
@@ -366,7 +298,7 @@ def fetch_earnings_status(ticker):
     except Exception:
         return None, "unknown"
 
-def compute_score(iv_rank, pc_ratio, squeeze_on, squeeze_dir):
+def compute_score(iv_rank, pc_ratio):
     score = 0
     if iv_rank is not None:
         if iv_rank > 50:
@@ -378,9 +310,6 @@ def compute_score(iv_rank, pc_ratio, squeeze_on, squeeze_dir):
             score += 2
         elif pc_ratio <= 0.80:
             score += 1
-    # Squeeze bonus: loaded and pointing up = +1
-    if squeeze_on and squeeze_dir in ("bull", "bull_fading"):
-        score += 1
     return score
 
 def compute_setup(iv_rank, pc_ratio):
@@ -404,8 +333,6 @@ def scan_ticker(ticker):
         "iv_source":       None,
         "pc_ratio":        None,
         "pc_source":       None,
-        "squeeze_on":      None,
-        "squeeze_dir":     None,
         "earnings_date":   None,
         "earnings_status": "unknown",
         "score":           0,
@@ -414,7 +341,6 @@ def scan_ticker(ticker):
         "errors":          [],
     }
 
-    # Price
     try:
         info = yf.Ticker(ticker).fast_info
         p = getattr(info, "last_price", None) or getattr(info, "regularMarketPrice", None)
@@ -423,7 +349,6 @@ def scan_ticker(ticker):
     except Exception:
         pass
 
-    # Barchart IV + P/C
     bc_url = f"https://www.barchart.com/stocks/quotes/{ticker}/put-call-ratios"
     result["sources"].append(bc_url)
 
@@ -439,7 +364,6 @@ def scan_ticker(ticker):
         result["pc_ratio"]  = pc_ratio
         result["pc_source"] = "barchart"
 
-    # yfinance P/C fallback
     if result["pc_ratio"] is None:
         yf_pc, yf_pc_err = fetch_pc_ratio_yfinance(ticker)
         if yf_pc is not None:
@@ -449,7 +373,6 @@ def scan_ticker(ticker):
         else:
             result["errors"].append(yf_pc_err or "yfinance P/C unavailable")
 
-    # yfinance IV fallback
     if result["iv_rank"] is None:
         yf_iv, yf_iv_err = fetch_iv_rank_approx(ticker)
         if yf_iv is not None:
@@ -459,22 +382,11 @@ def scan_ticker(ticker):
         else:
             result["errors"].append(yf_iv_err or "yfinance IV approx unavailable")
 
-    # TTM Squeeze
-    sq_on, sq_dir, sq_fired, sq_err = fetch_squeeze(ticker)
-    result["squeeze_on"]  = sq_on
-    result["squeeze_dir"] = sq_dir
-    if sq_err:
-        result["errors"].append(sq_err)
-
-    # Earnings
     earn_date, earn_status = fetch_earnings_status(ticker)
     result["earnings_date"]   = earn_date
     result["earnings_status"] = earn_status
 
-    result["score"] = compute_score(
-        result["iv_rank"], result["pc_ratio"],
-        result["squeeze_on"], result["squeeze_dir"]
-    )
+    result["score"] = compute_score(result["iv_rank"], result["pc_ratio"])
     result["setup"] = compute_setup(result["iv_rank"], result["pc_ratio"])
 
     return result
@@ -505,7 +417,6 @@ def run_full_scan(progress_cb=None):
                     "sector": _sector(t), "price": None,
                     "iv_rank": None, "iv_source": None,
                     "pc_ratio": None, "pc_source": None,
-                    "squeeze_on": None, "squeeze_dir": None,
                     "earnings_date": None, "earnings_status": "unknown",
                     "score": 0, "setup": "Error",
                     "sources": [], "errors": [str(exc)],
@@ -523,7 +434,6 @@ def run_full_scan(progress_cb=None):
     earn_risk   = sum(1 for r in results if r["earnings_status"] == "earn_risk")
     vol_crushed = sum(1 for r in results if r["earnings_status"] == "vol_crushed")
     eligible    = sum(1 for r in results if r["earnings_status"] not in ("earn_risk", "vol_crushed"))
-    squeeze_count = sum(1 for r in results if r["squeeze_on"] is True)
 
     return {
         "scan_time":           datetime.now().isoformat(),
@@ -531,57 +441,6 @@ def run_full_scan(progress_cb=None):
         "earnings_risk_count": earn_risk,
         "vol_crushed_count":   vol_crushed,
         "eligible_count":      eligible,
-        "squeeze_count":       squeeze_count,
         "top_3":               top_3,
         "results":             results,
-    }
-
-
-def run_squeeze_scan():
-    """
-    Standalone TTM Squeeze scan across the full watchlist.
-    Returns summary counts + per-ticker squeeze results, sorted by
-    fired first, then squeeze_on, then absolute momentum.
-    """
-    results = []
-    lock = threading.Lock()
-
-    def _scan(ticker):
-        sq_on, sq_dir, fired, sq_err = fetch_squeeze(ticker)
-        r = {
-            "ticker":             ticker,
-            "company":            COMPANY_NAMES.get(ticker, ticker),
-            "sector":             _sector(ticker),
-            "squeeze_on":         sq_on,
-            "squeeze_dir":        sq_dir,
-            "momentum_direction": sq_dir,
-            "fired":              fired,
-            "error":              sq_err,
-        }
-        with lock:
-            results.append(r)
-
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        list(ex.map(_scan, WATCHLIST))
-
-    results.sort(
-        key=lambda x: (
-            1 if x.get("fired")      else 0,
-            1 if x.get("squeeze_on") else 0,
-        ),
-        reverse=True,
-    )
-
-    in_squeeze  = sum(1 for r in results if r.get("squeeze_on") is True)
-    fired_count = sum(1 for r in results if r.get("fired") is True)
-    bull_count  = sum(1 for r in results if (r.get("squeeze_dir") or "").startswith("bull"))
-    bear_count  = sum(1 for r in results if (r.get("squeeze_dir") or "").startswith("bear"))
-
-    return {
-        "scan_time":     datetime.now().isoformat(),
-        "in_squeeze":    in_squeeze,
-        "fired":         fired_count,
-        "bull_momentum": bull_count,
-        "bear_momentum": bear_count,
-        "results":       results,
     }
