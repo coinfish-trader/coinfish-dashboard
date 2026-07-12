@@ -38,6 +38,29 @@ WATCHLIST_SECTORS = {
 }
 TICKER_TO_SECTOR = {t: sector for sector, tickers in WATCHLIST_SECTORS.items() for t in tickers}
 
+# Broader universe for the "Top 10 by Market Cap" widget - Billy wants the
+# ACTUAL top 10 largest companies, not just the top 10 of his 58-name
+# trading watchlist (WATCHLIST above is scoped to what he actually trades;
+# this is scoped to "what's actually huge" and is a separate, wider list).
+# No paid screener API here, so this is a static candidate list of every
+# realistic top-10/top-20-by-market-cap contender (mega and large caps,
+# US-listed or US-ADR so yfinance can price them) - fetched each poll, then
+# sorted so whichever names are actually largest on a given day win the top
+# 10 slots. Not exhaustive of the whole market, but wide enough that a name
+# outside WATCHLIST (e.g. AAPL wasn't previously eligible, or names like
+# BRK-B, AVGO, TSM, V, MA, WMT that aren't on the trading watchlist at all)
+# now gets included and can win a slot on its own merits. Saudi Aramco
+# (2222.SR) is excluded - yfinance can't reliably price/convert its native
+# Riyadh-listing currency.
+MARKET_CAP_UNIVERSE = sorted(set(WATCHLIST) | {
+    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "AVGO", "TSLA",
+    "BRK-B", "TSM", "WMT", "LLY", "JPM", "V", "MA", "NFLX", "ORCL", "XOM",
+    "COST", "UNH", "JNJ", "HD", "PG", "NVO", "ASML", "SAP", "BAC", "CVX",
+    "KO", "TMUS", "PM", "WFC", "ABBV", "IBM", "CRM", "CSCO", "MCD", "ABT",
+    "PEP", "DIS", "VZ", "T", "CMCSA", "ADBE", "QCOM", "TXN", "INTU", "INTC",
+    "NOW", "AMD", "UBER", "PDD", "BABA", "SHEL", "TM", "HSBC", "RY", "PLTR",
+} - {"SPY", "QQQ", "IWM"})  # index ETFs never belong in a market-cap ranking
+
 app = Flask(__name__, static_folder=".", static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
@@ -153,7 +176,10 @@ def movers():
 @app.route("/api/marketcap")
 def marketcap():
     def build():
-        rows, errors = ns.fetch_market_cap_leaders(WATCHLIST)
+        # Uses MARKET_CAP_UNIVERSE (broad mega/large-cap list), not
+        # WATCHLIST - Billy wants the actual top 10 largest companies here,
+        # not just the top 10 of his trading watchlist.
+        rows, errors = ns.fetch_market_cap_leaders(MARKET_CAP_UNIVERSE)
         return {"leaders": rows, "errors": errors}
     data, ts = _cached("marketcap", CACHE_TTL["marketcap"], build)
     return jsonify(data | {"as_of": ts})
