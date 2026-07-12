@@ -53,10 +53,11 @@ TICKER_TO_SECTOR = {t: sector for sector, tickers in WATCHLIST_SECTORS.items() f
 # (2222.SR) is excluded - yfinance can't reliably price/convert its native
 # Riyadh-listing currency. GOOG (Alphabet Class C) deliberately excluded -
 # GOOGL (Class A) is already in here and the two are the same company; only
-# one should occupy a ranking slot, not two. SpaceX is NOT and can't be
-# included - it's still private, no public ticker for yfinance to price.
+# one should occupy a ranking slot, not two. SpaceX (Space Exploration
+# Technologies Corp.) IPO'd 2026-06-12 on Nasdaq under SPCX, valued in the
+# trillions post-IPO - included below now that it has a real public ticker.
 MARKET_CAP_UNIVERSE = sorted((set(WATCHLIST) | {
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA",
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "SPCX",
     "BRK-B", "TSM", "WMT", "LLY", "JPM", "V", "MA", "NFLX", "ORCL", "XOM",
     "COST", "UNH", "JNJ", "HD", "PG", "NVO", "ASML", "SAP", "BAC", "CVX",
     "KO", "TMUS", "PM", "WFC", "ABBV", "IBM", "CRM", "CSCO", "MCD", "ABT",
