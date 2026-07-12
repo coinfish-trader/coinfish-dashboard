@@ -51,9 +51,12 @@ TICKER_TO_SECTOR = {t: sector for sector, tickers in WATCHLIST_SECTORS.items() f
 # BRK-B, AVGO, TSM, V, MA, WMT that aren't on the trading watchlist at all)
 # now gets included and can win a slot on its own merits. Saudi Aramco
 # (2222.SR) is excluded - yfinance can't reliably price/convert its native
-# Riyadh-listing currency.
+# Riyadh-listing currency. GOOG (Alphabet Class C) deliberately excluded -
+# GOOGL (Class A) is already in here and the two are the same company; only
+# one should occupy a ranking slot, not two. SpaceX is NOT and can't be
+# included - it's still private, no public ticker for yfinance to price.
 MARKET_CAP_UNIVERSE = sorted((set(WATCHLIST) | {
-    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "AVGO", "TSLA",
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA",
     "BRK-B", "TSM", "WMT", "LLY", "JPM", "V", "MA", "NFLX", "ORCL", "XOM",
     "COST", "UNH", "JNJ", "HD", "PG", "NVO", "ASML", "SAP", "BAC", "CVX",
     "KO", "TMUS", "PM", "WFC", "ABBV", "IBM", "CRM", "CSCO", "MCD", "ABT",
