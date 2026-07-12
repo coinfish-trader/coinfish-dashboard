@@ -792,13 +792,42 @@ def fetch_ticker_tape(tickers, max_workers=12):
 # so the widget still shows something meaningful outside premarket hours.
 # ---------------------------------------------------------------------------
 
-def fetch_premarket_movers(tickers, max_workers=12, top_n=10):
+def _yf_info_retry(ticker, retries=3, base_delay=0.6):
+    """
+    yf.Ticker(t).info wrapped with retry+backoff. Added after the
+    Movers/Market Cap/Heatmap widgets came back 100% "Expecting value: line
+    1 column 1 (char 0)" (a JSON-decode error, meaning Yahoo returned an
+    empty body) once this app was deployed on Railway - a fresh cloud IP
+    bursting 55+ concurrent .info calls trips Yahoo's rate limiter almost
+    immediately, even though the exact same code runs fine on Billy's home
+    IP. Same root cause already documented for the options-scanner backend
+    (see coinfish-hq/memory.md "yfinance options endpoint rate-limits
+    Railway's IP") - the fix there was sequential + retries instead of a
+    concurrent burst; this applies the same pattern; the caller also drops
+    max_workers to keep the burst small in the first place.
+    """
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            info = yf.Ticker(ticker).info
+            if info and info.get("regularMarketPrice") is not None:
+                return info, None
+            last_exc = "empty/incomplete response"
+        except Exception as exc:
+            last_exc = str(exc)
+        time.sleep(base_delay * (attempt + 1))
+    return None, last_exc
+
+
+def fetch_premarket_movers(tickers, max_workers=4, top_n=10):
     results = []
     errors = []
 
     def _one(t):
         try:
-            info = yf.Ticker(t).info
+            info, err = _yf_info_retry(t)
+            if info is None:
+                return {"ticker": t, "error": err or "no data"}
             state = info.get("marketState")
             pre_price = info.get("preMarketPrice")
             pre_pct = info.get("preMarketChangePercent")
@@ -840,7 +869,7 @@ def fetch_premarket_movers(tickers, max_workers=12, top_n=10):
     return valid[:top_n], errors
 
 
-def fetch_market_cap_leaders(tickers, max_workers=12, top_n=10):
+def fetch_market_cap_leaders(tickers, max_workers=4, top_n=10):
     """
     Top N watchlist names by market cap, with current price - a companion
     widget to fetch_premarket_movers above (that one sorts by % move, this
@@ -852,7 +881,9 @@ def fetch_market_cap_leaders(tickers, max_workers=12, top_n=10):
 
     def _one(t):
         try:
-            info = yf.Ticker(t).info
+            info, err = _yf_info_retry(t)
+            if info is None:
+                return {"ticker": t, "error": err or "no data"}
             cap = info.get("marketCap")
             price = info.get("regularMarketPrice") or info.get("currentPrice")
             if cap is None or price is None:
@@ -879,7 +910,7 @@ def fetch_market_cap_leaders(tickers, max_workers=12, top_n=10):
     return valid[:top_n], errors
 
 
-def fetch_heatmap_data(tickers, sector_map, max_workers=12):
+def fetch_heatmap_data(tickers, sector_map, max_workers=4):
     """
     Per-ticker snapshot for the sector heatmap widget (modeled on
     tradingterminal.com/heatmap, scoped to the watchlist instead of the
@@ -898,7 +929,9 @@ def fetch_heatmap_data(tickers, sector_map, max_workers=12):
 
     def _one(t):
         try:
-            info = yf.Ticker(t).info
+            info, err = _yf_info_retry(t)
+            if info is None:
+                return {"ticker": t, "error": err or "no data"}
             cap = info.get("marketCap")
             price = info.get("regularMarketPrice") or info.get("currentPrice")
             pct = info.get("regularMarketChangePercent")
