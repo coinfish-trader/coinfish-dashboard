@@ -1,0 +1,2588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coinfish Newsfeed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0A2342;
+    --navy-900: #061629;
+    --navy-800: #0D2C52;
+    --navy-700: #143866;
+    --teal: #1CA9B6;
+    --teal-bright: #25C5D4;
+    --gold: #D4AF37;
+    --gold-bright: #E6C24F;
+    --white: #FFFFFF;
+    --off-white: #F9F9F9;
+    --line: rgba(255,255,255,0.10);
+    --line-strong: rgba(255,255,255,0.18);
+    --green: #36D57E;
+    --red: #E8505B;
+    --muted: #9DB2CC;
+  }
+  /* Light theme: same variable names, swapped values, so every rule below
+     that already reads var(--navy-900) / var(--white) / etc. flips for free.
+     Only a couple of hardcoded (non-var) colors need their own overrides
+     further down (search "light-theme" for those). */
+  body.light-theme {
+    --navy: #FFFFFF;
+    --navy-900: #F0F3F8;
+    --navy-800: #FFFFFF;
+    --navy-700: #E7ECF3;
+    --white: #0A2342;
+    --off-white: #1C2B3A;
+    --line: rgba(10,35,66,0.10);
+    --line-strong: rgba(10,35,66,0.18);
+    --muted: #5B6B80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, var(--navy) 0%, var(--navy-900) 100%);
+    color: var(--white);
+    font-family: 'Open Sans', sans-serif;
+    font-size: 14px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  h1, h2, h3, .eyebrow { font-family: 'Inter', sans-serif; }
+
+  header {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header .brand {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    white-space: nowrap;
+  }
+  header .brand span.gold { color: var(--gold-bright); }
+  header .status { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  header .status.live::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-right: 6px;
+  }
+
+  .theme-toggle {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    background: var(--navy-900);
+    color: var(--white);
+    font-size: 0.85rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+  }
+  .theme-toggle:hover { border-color: var(--teal-bright); }
+
+  .search-wrap {
+    flex: 1 1 280px;
+    max-width: 420px;
+    position: relative;
+  }
+  .search-input {
+    width: 100%;
+    background: var(--navy-900);
+    border: 1px solid var(--line-strong);
+    border-radius: 100px;
+    padding: 8px 34px 8px 14px;
+    color: var(--white);
+    font-family: 'Open Sans', sans-serif;
+    font-size: 0.82rem;
+    outline: none;
+  }
+  .search-input::placeholder { color: var(--muted); }
+  .search-input:focus { border-color: var(--teal-bright); }
+  .search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    display: none;
+    padding: 4px 8px;
+  }
+  .search-clear:hover { color: var(--white); }
+
+  /* Quick nav */
+  .quicknav {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 9px 24px;
+    background: var(--navy-900);
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+  .quicknav button {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 100px;
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .quicknav button:hover { color: var(--teal-bright); border-color: var(--teal-bright); }
+
+  /* Ticker tape */
+  .tape-wrap {
+    background: var(--navy-900);
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 8px 0;
+  }
+  .tape-track {
+    display: inline-block;
+    animation: scroll-left 220s linear infinite;
+  }
+  .tape-track:hover { animation-play-state: paused; }
+  @keyframes scroll-left {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  .tape-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0 16px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.82rem;
+    border-right: 1px solid var(--line);
+  }
+  .tape-item .pct.up { color: var(--green); }
+  .tape-item .pct.down { color: var(--red); }
+
+  .macro-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .macro-stats-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 26px;
+    align-items: flex-start;
+  }
+  .macro-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 92px;
+  }
+  .macro-item .label {
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .macro-item .value {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 1.02rem;
+  }
+  .macro-item .sub {
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: capitalize;
+  }
+  .term-contango { color: var(--green); }
+  .term-backwardation { color: var(--red); }
+
+  .sector-bars-head {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin: 16px 0 8px;
+  }
+  .sector-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .sector-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sector-bar-label {
+    flex: 0 0 128px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    color: var(--white);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sector-bar-track {
+    flex: 1;
+    position: relative;
+    height: 14px;
+  }
+  .sector-bar-zero {
+    position: absolute;
+    left: 50%;
+    top: -2px;
+    bottom: -2px;
+    width: 1px;
+    background: var(--line-strong);
+  }
+  .sector-bar-fill {
+    position: absolute;
+    top: 2px;
+    height: 10px;
+    border-radius: 2px;
+  }
+  .sector-bar-value {
+    flex: 0 0 52px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .fg-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 22px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+  }
+  .fg-scale-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 176px;
+  }
+  .fg-scale-wrap > .label { align-self: flex-start; }
+  .fg-scale-svg { display: block; }
+  .fg-scale-labels {
+    display: flex;
+    justify-content: space-between;
+    width: 172px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: -6px;
+  }
+  .fg-scale-labels .fear { color: var(--red); }
+  .fg-scale-labels .greed { color: var(--green); }
+  .fg-scale-score-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .fg-scale-score-row .value { font-size: 1.15rem; }
+  .fg-scale-score-row .fg-rating {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .fg-sub-grid {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: 6px;
+    align-content: flex-start;
+    padding-top: 4px;
+  }
+  .fg-sub-btn {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.66rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 7px;
+    border: 1px solid;
+    background: var(--navy-700);
+    color: var(--off-white);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .fg-sub-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+  }
+  .fg-sub-btn.fg-sub-btn-active {
+    background: var(--navy-800) !important;
+    border-color: var(--gold-bright) !important;
+    color: var(--gold-bright) !important;
+  }
+  .fg-divider {
+    height: 2px;
+    border-radius: 2px;
+    margin: 20px 0 4px;
+    background: linear-gradient(90deg, var(--red) 0%, var(--gold-bright) 50%, var(--green) 100%);
+    opacity: 0.5;
+  }
+
+  /* Fear & Greed sub-score detail panel: fills the open space beside the buttons, populates on click */
+  .fg-info-panel {
+    flex: 1 1 260px;
+    min-width: 260px;
+    max-width: 480px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  body.light-theme .fg-info-panel { background: rgba(10,35,66,0.03); }
+  .fg-info-empty {
+    display: flex;
+    align-items: center;
+    min-height: 60px;
+    font-size: 0.74rem;
+    font-style: italic;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .fg-info-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 9px;
+  }
+  .fg-info-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.92rem;
+    font-weight: 800;
+  }
+  .fg-info-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .fg-info-score {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 700;
+    margin-left: auto;
+  }
+  .fg-info-section { margin-bottom: 9px; }
+  .fg-info-section:last-child { margin-bottom: 0; }
+  .fg-info-kicker {
+    display: block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--teal-bright);
+    margin-bottom: 2px;
+  }
+  .fg-info-section p {
+    margin: 0;
+    font-size: 0.74rem;
+    line-height: 1.55;
+    color: var(--off-white);
+  }
+  .fg-info-trade {
+    background: rgba(212,175,55,0.07);
+    border-left: 2px solid var(--gold);
+    padding: 7px 9px;
+    border-radius: 0 6px 6px 0;
+  }
+  .fg-info-trade .fg-info-kicker { color: var(--gold); }
+
+  .scrollbox {
+    max-height: 560px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .scrollbox::-webkit-scrollbar { width: 8px; }
+  .scrollbox::-webkit-scrollbar-track { background: transparent; }
+  .scrollbox::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
+  .scrollbox::-webkit-scrollbar-thumb:hover { background: var(--teal-bright); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 18px;
+    width: 100%;
+    padding: 18px 24px 60px;
+  }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--navy-800);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    scroll-margin-top: 56px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .panel-head h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .panel-head .head-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .panel-head .count {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .chevron {
+    display: inline-block;
+    color: var(--muted);
+    font-size: 0.7rem;
+    transition: transform 0.2s ease;
+  }
+  [data-key].collapsed .chevron { transform: rotate(-90deg); }
+  [data-key].collapsed .panel-body,
+  [data-key].collapsed .sidebar-body {
+    display: none;
+  }
+  [data-key] .panel-head:hover h2,
+  [data-key] .sidebar-head:hover h3 {
+    color: var(--teal-bright);
+  }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .toggle-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .pill {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 100px;
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .pill.active {
+    background: linear-gradient(100deg, var(--teal-bright), var(--gold-bright));
+    color: var(--navy-900);
+    border-color: transparent;
+  }
+
+  .feed-item {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-item .time {
+    flex: 0 0 62px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    padding-top: 2px;
+  }
+  .feed-item .ticker-tag {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    padding-top: 2px;
+  }
+  .ticker-tag {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 0.72rem;
+    color: var(--gold-bright);
+  }
+  .ticker-logo {
+    border-radius: 50%;
+    background: var(--navy-700);
+    border: 1px solid var(--line-strong);
+    object-fit: contain;
+    padding: 1px;
+    vertical-align: middle;
+  }
+  .ticker-logo-fallback {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--navy-700);
+    border: 1px solid var(--line-strong);
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    color: var(--gold-bright);
+    vertical-align: middle;
+  }
+  .feed-item .body a {
+    color: var(--white);
+    text-decoration: none;
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
+  .feed-item .body a:hover { color: var(--teal-bright); }
+  .feed-item .source {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 0.68rem;
+    color: var(--teal-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Biggest Pre-Market Movers */
+  .movers-list { display: flex; flex-direction: column; }
+  .mover-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .mover-row:last-child { border-bottom: none; }
+  .mover-rank {
+    flex: 0 0 16px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .mover-logo {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--navy-700);
+    border: 1px solid var(--line-strong);
+    object-fit: contain;
+    padding: 2px;
+  }
+  .mover-logo-fallback {
+    display: none;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--navy-700);
+    border: 1px solid var(--line-strong);
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--gold-bright);
+  }
+  .mover-ticker {
+    flex: 0 0 50px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--white);
+  }
+  .mover-dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-left: -4px;
+  }
+  .mover-dot.up { background: var(--green); }
+  .mover-dot.down { background: var(--red); }
+  .mover-tag {
+    flex: 0 0 auto;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .mover-price {
+    flex: 1;
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .mover-pct {
+    flex: 0 0 72px;
+    text-align: right;
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .mover-pct.up { color: var(--green); }
+  .mover-pct.down { color: var(--red); }
+  .mover-pct.mcap-val { flex: 0 0 76px; color: var(--gold-bright); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  th {
+    text-align: left;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  td {
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  td.form-tag {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    color: var(--gold-bright);
+    white-space: nowrap;
+  }
+  td a { color: var(--white); text-decoration: none; }
+  td a:hover { color: var(--teal-bright); }
+
+  .sidebar-block { margin-bottom: 20px; scroll-margin-top: 56px; }
+  .sidebar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    margin: 0 0 10px;
+  }
+  .sidebar-block h3 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--teal-bright);
+    margin: 0;
+  }
+  .cal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.8rem;
+    gap: 10px;
+  }
+  .cal-row .name { color: var(--white); display: flex; align-items: baseline; gap: 7px; }
+  .cal-row .meta { color: var(--muted); font-size: 0.72rem; white-space: nowrap; }
+
+  /* Econ rows: headline+time on the left, Forecast/Actual/Previous as three
+     genuine side-by-side columns on the right (a small table, column
+     headers shown once at the top of the list) rather than stacked lines. */
+  .econ-row { flex-direction: row; align-items: center; gap: 10px; }
+  .econ-row-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+  .econ-row-left .name { white-space: normal; }
+  .econ-stats-row { display: grid; grid-template-columns: repeat(3, 52px); gap: 8px; flex: 0 0 auto; }
+  .econ-stat-cell { text-align: right; font-family: 'Inter', sans-serif; font-size: 0.74rem; font-weight: 700; color: var(--off-white); white-space: nowrap; }
+  .econ-stat-cell.empty { color: var(--muted); opacity: 0.4; }
+  .econ-stat-cell.actual { color: var(--teal-bright); }
+
+  .econ-table-head { display: flex; align-items: center; gap: 10px; padding: 0 0 4px 0; }
+  .econ-table-head-spacer { flex: 1 1 auto; }
+  .econ-table-head-cols { display: grid; grid-template-columns: repeat(3, 52px); gap: 8px; flex: 0 0 auto; }
+  .econ-table-head-cols span { text-align: right; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+
+  /* Master fold/unfold-everything control, only shown on the day-grouped
+     This Week / Next Week views (see econTableHead). */
+  .econ-collapse-all {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--teal-bright);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .econ-collapse-all:hover { text-decoration: underline; }
+
+  /* Branded day-separator break line for This Week / Next Week (multi-day
+     views) - navy-light bar with a gold accent edge, sits between each
+     day's block of rows instead of repeating the date on every row.
+     Clickable to fold/unfold that day (see .econ-day-group.collapsed). */
+  .econ-day-group:first-child .econ-day-header { margin-top: 2px; }
+  .econ-day-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
+    margin: 10px 0 4px;
+    background: var(--navy-light);
+    border-left: 3px solid var(--gold-bright);
+    border-radius: 3px;
+    color: var(--off-white);
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 0.72rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .econ-day-header:hover { background: var(--navy-700, var(--navy-light)); }
+  .econ-day-header .day-chevron {
+    display: inline-block;
+    color: var(--gold-bright);
+    font-size: 2.1rem;
+    line-height: 0.5;
+    transition: transform 0.15s ease;
+  }
+  .econ-day-group.collapsed .day-chevron { transform: rotate(-90deg); }
+  .econ-day-group.collapsed .econ-row { display: none; }
+  .econ-day-group.collapsed .econ-day-header { margin-bottom: 4px; }
+
+  /* Legacy horizontal stat strip - still used by the click-through popup. */
+  .econ-stats { display: flex; gap: 12px; padding-left: 14px; }
+  .econ-stat { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+  .econ-stat b { font-family: 'Inter', sans-serif; font-weight: 700; color: var(--off-white); }
+  .econ-stat.actual b { color: var(--teal-bright); }
+
+  .impact-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
+  .impact-dot.high   { background: var(--red); }
+  .impact-dot.medium { background: var(--gold-bright); }
+  .impact-dot.low    { background: var(--muted); opacity: 0.6; }
+
+  .ctry-badge {
+    display: inline-block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-right: 2px;
+    vertical-align: 1px;
+  }
+  .ctry-badge.ctry-us { background: rgba(59, 130, 246, 0.18); color: #6ea8fe; }
+  .ctry-badge.ctry-ca { background: rgba(220, 38, 38, 0.18); color: #ff8a8a; }
+  .ctry-badge.ctry-cn { background: rgba(234, 179, 8, 0.18); color: var(--gold-bright, #eab308); }
+
+  .econ-legend {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+  .econ-legend span { display: inline-flex; align-items: center; gap: 4px; }
+
+  .econ-row { cursor: pointer; }
+  .econ-row:hover .name { color: var(--teal-bright); }
+  .econ-row.econ-row-active .name { color: var(--gold-bright); }
+
+  /* Economic event education popup - same dark card / gold border branding as coinfish-playbook.html's ticker popup */
+  #econPopup {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    background: #162435;
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-width: 280px;
+    max-width: 380px;
+    max-height: 380px;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+  }
+  body.light-theme #econPopup {
+    background: #FFFFFF;
+    box-shadow: 0 8px 32px rgba(10,35,66,0.18);
+  }
+  #econPopup .econ-pop-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+  #econPopup .econ-pop-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--gold);
+    letter-spacing: 0.01em;
+  }
+  #econPopup .econ-pop-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  #econPopup .econ-pop-meta {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  #econPopup .econ-pop-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  #econPopup .econ-pop-section { margin-bottom: 9px; }
+  #econPopup .econ-pop-section:last-child { margin-bottom: 0; }
+  #econPopup .econ-pop-kicker {
+    display: block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--teal-bright);
+    margin-bottom: 2px;
+  }
+  #econPopup .econ-pop-section p {
+    margin: 0;
+    font-size: 0.74rem;
+    line-height: 1.55;
+    color: var(--off-white);
+  }
+  #econPopup .econ-pop-trade {
+    background: rgba(212,175,55,0.07);
+    border-left: 2px solid var(--gold);
+    padding: 7px 9px;
+    border-radius: 0 6px 6px 0;
+  }
+  #econPopup .econ-pop-trade .econ-pop-kicker { color: var(--gold); }
+
+  .empty, .err {
+    color: var(--muted);
+    font-size: 0.8rem;
+    padding: 10px 0;
+  }
+  .err { color: var(--red); }
+
+  .disclaimer {
+    width: 100%;
+    padding: 0 24px 40px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    line-height: 1.6;
+  }
+
+  /* Sector Heatmap - full-width treemap below the two-column layout,
+     modeled on tradingterminal.com/heatmap in Coinfish colors. */
+  .heatmap-wrap-outer { width: 100%; padding: 0 24px 18px; }
+  .heatmap-treemap {
+    position: relative;
+    width: 100%;
+    height: 560px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--navy-900);
+  }
+  .heatmap-sector {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid var(--navy-800);
+    overflow: hidden;
+  }
+  .heatmap-sector-label {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 3px 8px;
+    background: var(--navy-800);
+    color: var(--off-white);
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    z-index: 2;
+    border-bottom: 1px solid var(--line);
+  }
+  .heatmap-cell {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid var(--navy-900);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    transition: filter 0.1s ease;
+    overflow: hidden;
+    padding: 2px;
+  }
+  .heatmap-cell:hover { filter: brightness(1.18); z-index: 5; }
+  .heatmap-cell .hc-ticker {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .heatmap-cell .hc-pct {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .heatmap-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+  .heatmap-legend .hl-swatch {
+    display: inline-block;
+    width: 22px;
+    height: 8px;
+    border-radius: 2px;
+    vertical-align: middle;
+  }
+
+  /* Heatmap ticker popup - same dark navy/gold-border branding as the econ
+     calendar popup, just its own content layout (logo+sparkline+stat table). */
+  #heatmapPopup {
+    display: none;
+    position: fixed;
+    z-index: 200;
+    width: 340px;
+    background: var(--navy-800);
+    border: 1px solid var(--gold-bright);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+    padding: 16px;
+  }
+  .hmp-head { display: flex; align-items: center; gap: 10px; }
+  .hmp-logo {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: var(--navy-700);
+    border: 1px solid var(--line-strong);
+    object-fit: contain;
+    padding: 3px;
+    flex: 0 0 auto;
+  }
+  .hmp-logo-fallback {
+    display: none;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: var(--navy-700);
+    border: 1px solid var(--line-strong);
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 0.7rem;
+    color: var(--gold-bright);
+    flex: 0 0 auto;
+  }
+  .hmp-titles { flex: 1; min-width: 0; }
+  .hmp-ticker { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 0.95rem; color: var(--white); }
+  .hmp-name { font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hmp-price-block { text-align: right; flex: 0 0 auto; }
+  .hmp-price { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 1rem; color: var(--off-white); }
+  .hmp-pct-badge {
+    display: inline-block;
+    margin-top: 2px;
+    padding: 1px 7px;
+    border-radius: 100px;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .hmp-spark { width: 100%; height: 46px; margin: 12px 0 10px; }
+  .hmp-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+  .hmp-table tr { border-bottom: 1px solid var(--line); }
+  .hmp-table tr:last-child { border-bottom: none; }
+  .hmp-table td { padding: 5px 0; }
+  .hmp-table td.hmp-label { color: var(--muted); }
+  .hmp-table td.hmp-val { text-align: right; font-family: 'Inter', sans-serif; font-weight: 600; color: var(--off-white); }
+
+  .refresh-btn {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--navy-900);
+    background: var(--gold-bright);
+    border: none;
+    border-radius: 100px;
+    padding: 5px 14px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Coin<span class="gold">fish</span> Newsfeed</div>
+  <div class="search-wrap">
+    <input class="search-input" id="searchInput" type="text" placeholder="Search tickers or keywords…" autocomplete="off">
+    <button class="search-clear" id="searchClear">✕</button>
+  </div>
+  <div id="status" class="status">loading…</div>
+  <button type="button" id="themeToggle" class="theme-toggle" title="Switch to light mode">☀️</button>
+</header>
+
+<nav class="quicknav" id="quickNav">
+  <button data-jump="macro">Macro</button>
+  <button data-jump="news">News</button>
+  <button data-jump="movers">Movers</button>
+  <button data-jump="marketcap">Market Cap</button>
+  <button data-jump="filings">Filings</button>
+  <button data-jump="form4">Insider</button>
+  <button data-jump="econ">Calendar</button>
+  <button data-jump="earnings">Earnings</button>
+  <button data-jump="heatmap">Heatmap</button>
+</nav>
+
+<div class="tape-wrap">
+  <div class="tape-track" id="tapeTrack">
+    <span class="tape-item">Loading watchlist…</span>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- LEFT COLUMN: Macro Snapshot, then Market Feed below it -->
+  <div>
+    <div class="panel" data-key="macro">
+      <div class="panel-head">
+        <h2>Macro Snapshot</h2>
+        <div class="head-right">
+          <span class="count" id="macroAsOf">-</span>
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="macro-grid" id="macroGrid"><div class="empty">Loading…</div></div>
+        <div class="fg-divider"></div>
+        <div class="sector-bars-head">Sector Performance: Daily (vs. prior close)</div>
+        <div class="sector-bars" id="sectorRow"></div>
+      </div>
+    </div>
+
+    <div class="panel" data-key="news">
+      <div class="panel-head">
+        <h2>Market Feed</h2>
+        <div class="head-right">
+          <span class="count" id="newsCount">-</span>
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="filters" id="newsFilters">
+          <button class="pill active" data-filter="all">All</button>
+        </div>
+        <div id="newsFeed" class="scrollbox"><div class="empty">Loading headlines…</div></div>
+      </div>
+    </div>
+
+    <div class="panel" data-key="movers">
+      <div class="panel-head">
+        <h2>Biggest Pre-Market Movers</h2>
+        <div class="head-right">
+          <span class="count" id="moversAsOf">-</span>
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="moversList" class="movers-list"><div class="empty">Loading…</div></div>
+      </div>
+    </div>
+
+    <div class="panel" data-key="marketcap">
+      <div class="panel-head">
+        <h2>Top 10 by Market Cap</h2>
+        <div class="head-right">
+          <span class="count" id="marketCapAsOf">-</span>
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="marketCapList" class="movers-list"><div class="empty">Loading…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: Economic Calendar bundle beside Macro Snapshot, SEC Filings beside Market Feed -->
+  <div>
+    <div class="panel">
+      <div class="sidebar-block" data-key="econ">
+        <div class="sidebar-head">
+          <h3>Economic Calendar</h3>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="sidebar-body">
+          <div class="toggle-row" id="econScopeRow">
+            <button class="pill active" data-scope="today">Today</button>
+            <button class="pill" data-scope="week">This Week</button>
+            <button class="pill" data-scope="nextweek">Next Week</button>
+          </div>
+          <div class="econ-legend">
+            <span><span class="impact-dot high"></span> High</span>
+            <span><span class="impact-dot medium"></span> Medium</span>
+            <span><span class="impact-dot low"></span> Low</span>
+          </div>
+          <div id="econList"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+      <div class="sidebar-block" data-key="earnings">
+        <div class="sidebar-head">
+          <h3>Earnings: Watchlist (14 Days)</h3>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="sidebar-body">
+          <div id="earningsList"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+      <div class="sidebar-block" data-key="div">
+        <div class="sidebar-head">
+          <h3>Ex-Dividend: Watchlist</h3>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="sidebar-body">
+          <div id="divWatchlist"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+      <div class="sidebar-block" data-key="ipo">
+        <div class="sidebar-head">
+          <h3>IPO Calendar: This Month</h3>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="sidebar-body">
+          <div id="ipoList"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+      <button class="refresh-btn" onclick="loadAll()">Refresh now</button>
+    </div>
+
+    <div class="panel" data-key="filings">
+      <div class="panel-head">
+        <h2>SEC Filings</h2>
+        <div class="head-right">
+          <span class="count" id="filingsCount">-</span>
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="toggle-row" id="filingsScopeRow">
+          <button class="pill active" data-scope="watchlist">Watchlist</button>
+          <button class="pill" data-scope="all">All Market</button>
+        </div>
+        <div class="filters" id="filingsFilters">
+          <button class="pill active" data-filter="all">All</button>
+        </div>
+        <table>
+          <thead><tr><th>Time</th><th>Form</th><th>Company</th></tr></thead>
+          <tbody id="filingsBody"><tr><td colspan="3" class="empty">Loading filings…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" data-key="form4">
+      <div class="panel-head">
+        <h2>Insider Activity (Form 4)</h2>
+        <div class="head-right">
+          <span class="count" id="form4Count">-</span>
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="toggle-row" id="form4ScopeRow">
+          <button class="pill active" data-scope="watchlist">Watchlist</button>
+          <button class="pill" data-scope="all">All Market</button>
+        </div>
+        <table>
+          <thead><tr><th>Filed</th><th>Filer / Company</th></tr></thead>
+          <tbody id="form4Body"><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="heatmap-wrap-outer">
+  <div class="panel" data-key="heatmap">
+    <div class="panel-head">
+      <h2>Heatmap</h2>
+      <div class="head-right">
+        <span class="count" id="heatmapAsOf">-</span>
+        <span class="chevron">▾</span>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div id="heatmapTreemap" class="heatmap-treemap"><div class="empty">Loading…</div></div>
+      <div class="heatmap-legend">
+        <span>Down</span>
+        <span class="hl-swatch" style="background:rgba(232,80,91,0.9)"></span>
+        <span class="hl-swatch" style="background:rgba(232,80,91,0.35)"></span>
+        <span class="hl-swatch" style="background:rgba(157,178,204,0.15)"></span>
+        <span class="hl-swatch" style="background:rgba(54,213,126,0.35)"></span>
+        <span class="hl-swatch" style="background:rgba(54,213,126,0.9)"></span>
+        <span>Up</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="heatmapPopup"></div>
+
+<div class="disclaimer">
+  Personal tool for Coinfish Trading Company. Headlines aggregated from Yahoo Finance, CNBC, MarketWatch, and
+  Federal Reserve RSS; filings and insider activity from SEC EDGAR (real-time filings feed + full-text search,
+  cross-referenced against SEC's public ticker/CIK map to flag watchlist names); calendar data from Nasdaq public
+  endpoints and the ForexFactory weekly economic feed; VIX, VIX9D, Treasury yields, and sector ETFs via yfinance;
+  Fear &amp; Greed Index via CNN's public data feed. All free, keyless sources. No Benzinga / PR Newswire / X
+  monitoring feed, no standalone live options put/call ratio (CBOE's public CSV archives are stale; the Fear &amp;
+  Greed index's "Put/Call Options" component is the closest live proxy). For informational use only, not
+  investment advice.
+</div>
+
+<div id="econPopup"></div>
+
+<script>
+const API = ""; // same origin
+
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Small circular ticker logo, reused anywhere a ticker shows up (Market
+// Feed, Earnings, the Movers widget). Free/keyless logo CDN keyed straight
+// off the ticker symbol - no domain mapping needed. Falls back to a navy
+// badge with the ticker's initials if a symbol isn't in their set.
+function tickerLogoHTML(ticker, size) {
+  if (!ticker) return "";
+  const logoUrl = `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(ticker)}.png`;
+  const initials = ticker.replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase();
+  const px = size + "px";
+  return `<img class="ticker-logo" src="${logoUrl}" alt="" title="${esc(ticker)}" loading="lazy"
+            style="width:${px};height:${px}"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+          <span class="ticker-logo-fallback" style="width:${px};height:${px};font-size:${Math.round(size * 0.4)}px">${esc(initials)}</span>`;
+}
+
+async function getJSON(path) {
+  const res = await fetch(API + path);
+  if (!res.ok) throw new Error(path + " -> " + res.status);
+  return res.json();
+}
+
+function timeAgo(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return mins + "m ago";
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + "h ago";
+  return Math.round(hrs / 24) + "d ago";
+}
+
+function setStatus(ok) {
+  const el = document.getElementById("status");
+  el.className = "status" + (ok ? " live" : "");
+  el.textContent = ok ? "Live · updated " + new Date().toLocaleTimeString() : "Connection issue";
+}
+
+let searchTerm = "";
+
+async function loadTape() {
+  const j = await getJSON("/api/tape");
+  const items = j.data.filter(d => d.price !== null);
+  const track = document.getElementById("tapeTrack");
+  const render = items.map(d => {
+    const dir = d.pct_change >= 0 ? "up" : "down";
+    const sign = d.pct_change >= 0 ? "+" : "";
+    return `<span class="tape-item">${d.ticker} <span class="pct ${dir}">${sign}${d.pct_change}%</span></span>`;
+  }).join("");
+  track.innerHTML = render + render; // duplicate for seamless scroll
+}
+
+function fgColor(score) {
+  // 0 = extreme fear (red) -> 50 = neutral (gold) -> 100 = extreme greed (green)
+  if (score === null || score === undefined) return "var(--muted)";
+  if (score < 50) {
+    const t = score / 50;
+    return `rgb(${Math.round(232 - t * (232 - 230))}, ${Math.round(80 + t * (194 - 80))}, ${Math.round(91 + t * (79 - 91))})`;
+  }
+  const t = (score - 50) / 50;
+  return `rgb(${Math.round(230 - t * (230 - 54))}, ${Math.round(194 + t * (213 - 194))}, ${Math.round(79 + t * (126 - 79))})`;
+}
+
+// Same red->gold->green ramp as fgColor, but as an rgba() string for tinted fills.
+function fgColorAlpha(score, alpha) {
+  const rgb = fgColor(score);
+  const m = rgb.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+  if (!m) return `rgba(157, 178, 204, ${alpha})`;
+  return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
+}
+
+// Balance-scale visual for the Fear & Greed score: a fulcrum with a beam
+// that tilts toward whichever side (fear/greed) is currently heavier.
+const FG_SVG_COLORS = { red: "#E8505B", green: "#36D57E", gold: "#E6C24F", muted: "#9DB2CC" };
+
+const FG_COMPONENT_DETAILS = {
+  "S&P 500 Momentum": {
+    what: "Compares the S&P 500's current price to its own 125-day (roughly 6-month) moving average.",
+    read: "Below 50 means price is sitting under that average. The intermediate trend is fading or has rolled over. Above 50 means price is holding above trend. The farther from 50, the more stretched the reading in either direction.",
+    trade: "A weak reading argues for lighter delta and wider short strikes on call-side spreads (SPY/QQQ), since the trend isn't giving rallies much support, and for widening the call wing on an iron condor. A strong reading supports staying with the trend on put-side spreads, but treat extreme highs as a cue the move may be getting overextended, not a reason to add size."
+  },
+  "Price Strength": {
+    what: "Balance of stocks making new 52-week highs vs. new 52-week lows on the NYSE.",
+    read: "More new lows than highs pulls the score toward fear; more new highs pulls it toward greed. This measures market breadth, not the index price itself. It can quietly diverge from where SPY or QQQ are trading.",
+    trade: "Weak breadth under a still-rising index is a classic warning sign. It's a good time to take profit on put-side credit spreads and avoid adding fresh bullish risk. Broad, healthy breadth (lots of new highs) supports staying with trend-following condors and giving the bullish wing more room."
+  },
+  "Price Breadth": {
+    what: "Trading volume in advancing stocks vs. declining stocks: up-volume vs. down-volume across the market.",
+    read: "Heavy down-volume days drag this toward fear even before price has moved much. It's often an earlier tell than the index chart itself. A reading near 50 means volume is roughly balanced between advancers and decliners.",
+    trade: "A sharp drop here (volume piling into decliners) often precedes a volatility pop. Worth trimming new short-premium size or widening strikes on fresh iron condors before entering, since realized moves can outrun what current implied vol is pricing in."
+  },
+  "Put/Call Options": {
+    what: "Total market put option volume vs. call option volume for the day.",
+    read: "More puts being bought relative to calls (hedging or outright bearish bets) pushes the score toward fear. Heavy call buying pushes it toward greed. This is the live stand-in for the CBOE put/call ratio here, since CBOE's public CSV feeds are no longer updated.",
+    trade: "Elevated put buying usually means downside protection is in demand. Put-side credit spreads can carry richer premium in that environment. Heavy call buying can fatten call-side spread and condor-wing credit too, but a one-sided extreme raises the odds of a sharp reversal, so keep size in check."
+  },
+  "Market Volatility": {
+    what: "The VIX level compared to its own 50-day moving average.",
+    read: "VIX running hot above its own average = fear (volatility expanding). VIX sitting below its average = greed (volatility compressing). This tracks the trend in volatility itself, not just where VIX happens to sit in absolute terms.",
+    trade: "Directly useful for premium selling: VIX above its 50-day average usually means richer iron condor and credit spread premium, but size the strike width to the wider expected move that comes with it. VIX compressing below its average often means thinner premium. That may call for tighter wings or simply waiting for a better entry."
+  },
+  "Junk Bond Demand": {
+    what: "The yield spread between high-yield (\"junk\") corporate bonds and investment-grade bonds.",
+    read: "A widening spread (junk yields rising faster than investment-grade) signals investors pulling back from risk = fear. A narrowing spread = greed, credit markets are comfortable extending risk.",
+    trade: "Credit markets sometimes flash stress before equities react. Treat a fear reading here as a reason to size down or lean on narrower, more defined-risk iron condors rather than pushing strikes closer to the money."
+  },
+  "Safe Haven Demand": {
+    what: "Stock returns vs. Treasury bond returns over the trailing 20 trading days.",
+    read: "When bonds are outperforming stocks over that window, money is rotating to safety = fear. Stocks outperforming bonds = greed, risk appetite is intact.",
+    trade: "A flight-to-safety reading often coincides with rising realized volatility. Good context for wider strikes and smaller position size on new spreads or condors until the rotation settles down."
+  },
+};
+
+// Fear & Greed sub-score detail panel: fills the open space beside the buttons on click.
+let selectedFgLabel = null;
+let lastFgComponents = [];
+
+function renderFgInfoPanel() {
+  const panel = document.getElementById("fgInfoPanel");
+  if (!panel) return;
+
+  if (!selectedFgLabel) {
+    panel.innerHTML = '<div class="fg-info-empty">Click a sub-score above to see how it’s read and how to apply it to your trades.</div>';
+    return;
+  }
+  const comp = lastFgComponents.find(c => c.label === selectedFgLabel);
+  const details = FG_COMPONENT_DETAILS[selectedFgLabel];
+  if (!comp || !details) {
+    panel.innerHTML = '<div class="fg-info-empty">No data for this component right now.</div>';
+    return;
+  }
+  const score = Math.round(comp.score);
+  const color = fgColor(comp.score);
+  panel.innerHTML = `
+    <div class="fg-info-head">
+      <span class="fg-info-label" style="color:${color}">${esc(selectedFgLabel)}</span>
+      <span class="fg-info-badge" style="color:${color};background:${fgColorAlpha(comp.score, 0.16)}">${esc(comp.rating || "")}</span>
+      <span class="fg-info-score" style="color:${color}">${score} / 100</span>
+    </div>
+    <div class="fg-info-section"><span class="fg-info-kicker">What it measures</span><p>${esc(details.what)}</p></div>
+    <div class="fg-info-section"><span class="fg-info-kicker">How to read it</span><p>${esc(details.read)}</p></div>
+    <div class="fg-info-section fg-info-trade"><span class="fg-info-kicker">Applying it to your trades</span><p>${esc(details.trade)}</p></div>
+  `;
+}
+
+function highlightActiveFgBtn() {
+  document.querySelectorAll(".fg-sub-btn").forEach(b => {
+    b.classList.toggle("fg-sub-btn-active", b.dataset.label === selectedFgLabel);
+  });
+}
+
+function selectFgComponent(label) {
+  selectedFgLabel = (selectedFgLabel === label) ? null : label;
+  renderFgInfoPanel();
+  highlightActiveFgBtn();
+}
+
+document.addEventListener("click", function(e) {
+  const btn = e.target.closest(".fg-sub-btn");
+  if (btn) selectFgComponent(btn.dataset.label);
+});
+
+function buildFgScaleSvg(score) {
+  const s = (score === null || score === undefined) ? 50 : score;
+  const tilt = ((s - 50) / 50) * 20; // degrees; + tips the greed (right) pan down
+  const fearOp = s < 50 ? 1 : 0.3;
+  const greedOp = s >= 50 ? 1 : 0.3;
+  const c = FG_SVG_COLORS;
+  return `
+    <svg class="fg-scale-svg" viewBox="0 0 200 118" width="172" height="102" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="78,112 122,112 112,101 88,101" fill="${c.muted}" opacity="0.45"></polygon>
+      <line x1="100" y1="108" x2="100" y2="40" stroke="${c.muted}" stroke-width="3" stroke-linecap="round"></line>
+      <g transform="rotate(${tilt.toFixed(2)} 100 40)">
+        <line x1="44" y1="40" x2="156" y2="40" stroke="${c.gold}" stroke-width="3" stroke-linecap="round"></line>
+        <line x1="44" y1="40" x2="44" y2="63" stroke="${c.gold}" stroke-width="1.5"></line>
+        <line x1="156" y1="40" x2="156" y2="63" stroke="${c.gold}" stroke-width="1.5"></line>
+        <ellipse cx="44" cy="65" rx="23" ry="7" fill="${c.red}" opacity="${fearOp}"></ellipse>
+        <ellipse cx="156" cy="65" rx="23" ry="7" fill="${c.green}" opacity="${greedOp}"></ellipse>
+      </g>
+      <circle cx="100" cy="40" r="4.5" fill="${c.gold}"></circle>
+    </svg>`;
+}
+
+async function loadMacro() {
+  const j = await getJSON("/api/macro");
+  const grid = document.getElementById("macroGrid");
+  const vix = j.vix || {};
+  const yields = j.yields || [];
+  const fomc = j.fomc || {};
+  const fg = j.fear_greed || {};
+
+  let fgHtml = "";
+  lastFgComponents = (fg.components || []).filter(c => c.score !== null);
+  if (fg.score !== null && fg.score !== undefined) {
+    const color = fgColor(fg.score);
+    const subHtml = lastFgComponents.map(c => {
+      const cColor = fgColor(c.score);
+      const scoreRounded = Math.round(c.score);
+      return `<button type="button" class="fg-sub-btn" data-label="${esc(c.label)}" data-score="${scoreRounded}" data-rating="${esc(c.rating || '')}" style="border-color:${cColor}">${esc(c.label)} ${scoreRounded}</button>`;
+    }).join("");
+    fgHtml = `
+      <div class="fg-block">
+        <div class="fg-scale-wrap">
+          <span class="label">Fear &amp; Greed</span>
+          ${buildFgScaleSvg(fg.score)}
+          <div class="fg-scale-labels"><span class="fear">Fear</span><span class="greed">Greed</span></div>
+          <div class="fg-scale-score-row">
+            <span class="value" style="color:${color}">${esc(Math.round(fg.score))}</span>
+            <span class="fg-rating" style="color:${color}">${esc(fg.rating)}</span>
+          </div>
+        </div>
+        <div class="fg-sub-grid">${subHtml}</div>
+        <div class="fg-info-panel" id="fgInfoPanel"></div>
+      </div>`;
+  }
+
+  let statsHtml = "";
+  if (vix.vix !== null && vix.vix !== undefined) {
+    const termClass = vix.term_structure === "contango" ? "term-contango" : "term-backwardation";
+    statsHtml += `
+      <div class="macro-item">
+        <span class="label">VIX / VIX9D</span>
+        <span class="value">${esc(vix.vix)} / ${esc(vix.vix9d)}</span>
+        <span class="sub ${termClass}">${esc(vix.term_structure)}</span>
+      </div>`;
+  }
+  (yields || []).forEach(y => {
+    if (y.yield_pct === null || y.yield_pct === undefined) return;
+    statsHtml += `
+      <div class="macro-item">
+        <span class="label">${esc(y.label)} Yield</span>
+        <span class="value">${esc(y.yield_pct)}%</span>
+      </div>`;
+  });
+  if (fomc.days_until !== null && fomc.days_until !== undefined) {
+    statsHtml += `
+      <div class="macro-item">
+        <span class="label">Next FOMC</span>
+        <span class="value">${fomc.in_progress ? "In progress" : fomc.days_until + "d"}</span>
+        <span class="sub">${esc(fomc.next_start)} – ${esc(fomc.next_end)}</span>
+      </div>`;
+  }
+
+  const html = fgHtml + (statsHtml ? `<div class="macro-stats-row">${statsHtml}</div>` : "");
+  grid.innerHTML = html || '<div class="empty">Macro data unavailable.</div>';
+  // Buttons/panel are rebuilt each poll. Re-apply any open selection so it doesn't blink shut.
+  renderFgInfoPanel();
+  highlightActiveFgBtn();
+
+  const sectorRow = document.getElementById("sectorRow");
+  const sectors = (j.sectors || []).filter(s => s.price !== null)
+    .slice()
+    .sort((a, b) => b.pct_change - a.pct_change);
+  const maxAbs = Math.max(1, ...sectors.map(s => Math.abs(s.pct_change))) * 1.15;
+  sectorRow.innerHTML = sectors.map(s => {
+    const pct = s.pct_change;
+    const up = pct >= 0;
+    const color = up ? "#36D57E" : "#E8505B";
+    const widthPct = (Math.abs(pct) / maxAbs) * 50;
+    const leftPct = up ? 50 : 50 - widthPct;
+    const sign = up ? "+" : "";
+    return `
+      <div class="sector-bar-row">
+        <span class="sector-bar-label">${esc(s.sector)}</span>
+        <div class="sector-bar-track">
+          <div class="sector-bar-zero"></div>
+          <div class="sector-bar-fill" style="left:${leftPct}%;width:${widthPct}%;background:${color}"></div>
+        </div>
+        <span class="sector-bar-value" style="color:${color}">${sign}${esc(pct)}%</span>
+      </div>`;
+  }).join("");
+
+  document.getElementById("macroAsOf").textContent = "updated " + new Date().toLocaleTimeString();
+}
+
+let allNews = [];
+let newsFilter = "all";
+
+async function loadNews() {
+  const j = await getJSON("/api/news");
+  allNews = j.data || [];
+  const sources = ["all", ...new Set(allNews.map(n => n.source))];
+  const filterWrap = document.getElementById("newsFilters");
+  filterWrap.innerHTML = sources.map(s =>
+    `<button class="pill ${s === newsFilter ? "active" : ""}" data-filter="${s}">${s === "all" ? "All" : s}</button>`
+  ).join("");
+  filterWrap.querySelectorAll(".pill").forEach(btn => {
+    btn.onclick = () => { newsFilter = btn.dataset.filter; renderNews(); refreshFilterActive(filterWrap, newsFilter); };
+  });
+  renderNews();
+}
+
+function refreshFilterActive(wrap, val) {
+  wrap.querySelectorAll(".pill").forEach(b => b.classList.toggle("active", b.dataset.filter === val));
+}
+
+function renderNews() {
+  let list = newsFilter === "all" ? allNews : allNews.filter(n => n.source === newsFilter);
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    list = list.filter(n => (n.ticker || "").toLowerCase().includes(q) || (n.headline || "").toLowerCase().includes(q));
+  }
+  const el = document.getElementById("newsFeed");
+  document.getElementById("newsCount").textContent = list.length + (searchTerm ? " matching" : " stories");
+  if (!list.length) { el.innerHTML = '<div class="empty">No headlines match.</div>'; return; }
+  el.innerHTML = list.slice(0, 80).map(n => `
+    <div class="feed-item">
+      <div class="time">${esc(timeAgo(n.published))}</div>
+      <div class="ticker-tag">${tickerLogoHTML(n.ticker, 22)}</div>
+      <div class="body">
+        <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.headline)}</a>
+        <div class="source">${esc(n.source)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+let allFilings = [];
+let filingsFilter = "all";
+let filingsScope = "watchlist";
+let allForm4 = [];
+let form4Scope = "watchlist";
+
+async function loadFilings() {
+  const j = await getJSON("/api/filings");
+  allFilings = j.filings || [];
+  allForm4 = j.form4 || [];
+
+  const forms = ["all", ...new Set(allFilings.map(f => f.form).filter(Boolean))];
+  const wrap = document.getElementById("filingsFilters");
+  wrap.innerHTML = forms.map(f =>
+    `<button class="pill ${f === filingsFilter ? "active" : ""}" data-filter="${f}">${f === "all" ? "All" : f}</button>`
+  ).join("");
+  wrap.querySelectorAll(".pill").forEach(btn => {
+    btn.onclick = () => { filingsFilter = btn.dataset.filter; renderFilings(); refreshFilterActive(wrap, filingsFilter); };
+  });
+
+  renderFilings();
+  renderForm4();
+}
+
+function renderFilings() {
+  let list = filingsFilter === "all" ? allFilings : allFilings.filter(f => f.form === filingsFilter);
+  if (filingsScope === "watchlist") list = list.filter(f => f.in_watchlist);
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    list = list.filter(f =>
+      (f.company || "").toLowerCase().includes(q) ||
+      (f.watchlist_ticker || "").toLowerCase().includes(q) ||
+      (f.form || "").toLowerCase().includes(q)
+    );
+  }
+  document.getElementById("filingsCount").textContent = list.length + " filings";
+  const body = document.getElementById("filingsBody");
+  if (!list.length) {
+    const msg = filingsScope === "watchlist" ? "No watchlist filings right now. Try All Market." : "No filings match.";
+    body.innerHTML = `<tr><td colspan="3" class="empty">${msg}</td></tr>`;
+    return;
+  }
+  body.innerHTML = list.slice(0, 100).map(f => `
+    <tr>
+      <td>${esc(timeAgo(f.updated))}</td>
+      <td class="form-tag">${esc(f.form)}</td>
+      <td>${f.watchlist_ticker ? `<span class="ticker-tag">${esc(f.watchlist_ticker)}</span> ` : ""}<a href="${esc(f.link)}" target="_blank" rel="noopener">${esc(f.company)}</a></td>
+    </tr>
+  `).join("");
+}
+
+function renderForm4() {
+  let list = allForm4;
+  if (form4Scope === "watchlist") list = list.filter(f => f.in_watchlist);
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    list = list.filter(f =>
+      (f.companies || []).join(", ").toLowerCase().includes(q) ||
+      (f.watchlist_ticker || "").toLowerCase().includes(q)
+    );
+  }
+  document.getElementById("form4Count").textContent = list.length + (form4Scope === "watchlist" ? " watchlist" : " recent");
+  const f4Body = document.getElementById("form4Body");
+  if (!list.length) {
+    const msg = form4Scope === "watchlist" ? "No watchlist insider activity right now. Try All Market." : "No matches.";
+    f4Body.innerHTML = `<tr><td colspan="2" class="empty">${msg}</td></tr>`;
+    return;
+  }
+  f4Body.innerHTML = list.slice(0, 25).map(f => `
+    <tr>
+      <td>${esc(f.filed)}</td>
+      <td>${f.watchlist_ticker ? `<span class="ticker-tag">${esc(f.watchlist_ticker)}</span> ` : ""}${esc((f.companies || []).join(", "))}</td>
+    </tr>
+  `).join("");
+}
+
+let econToday = [];
+let econWeekList = [];
+let econNextWeekList = [];
+let econScope = "today";
+
+// Country -> small colored code badge, so a headline reads at a glance
+// whether it's a US/CA/CN print. Windows Chrome has no color flag emoji
+// glyphs (they fall back to plain lowercase letter pairs like "us"/"cn",
+// which is illegible next to real text) so this uses a CSS badge instead
+// of an actual flag character - renders identically on every platform.
+// Nasdaq-sourced rows ("today"/"nextweek") carry full country names;
+// ForexFactory-sourced rows ("week") carry currency codes - covers both
+// since the calendar is scoped to just these three countries.
+const COUNTRY_BADGE = {
+  "United States": { code: "US", cls: "us" }, "USD": { code: "US", cls: "us" },
+  "Canada": { code: "CA", cls: "ca" }, "CAD": { code: "CA", cls: "ca" },
+  "China": { code: "CN", cls: "cn" }, "CNY": { code: "CN", cls: "cn" },
+};
+function countryFlag(country) {
+  const b = COUNTRY_BADGE[country];
+  return b ? `<span class="ctry-badge ctry-${b.cls}">${b.code}</span>` : "";
+}
+
+function econStatVal(v) {
+  if (v === null || v === undefined) return null;
+  // Nasdaq's feed sometimes sends the literal text "&nbsp;" instead of a
+  // real blank for not-yet-released figures — strip that out too.
+  const s = String(v).replace(/&nbsp;/gi, "").trim();
+  return s.length ? s : null;
+}
+
+function buildEconStats(prior, forecast, actual) {
+  const parts = [];
+  if (prior !== null) parts.push(`<span class="econ-stat prior">Prior <b>${esc(prior)}</b></span>`);
+  if (forecast !== null) parts.push(`<span class="econ-stat forecast">Forecast <b>${esc(forecast)}</b></span>`);
+  if (actual !== null) parts.push(`<span class="econ-stat actual">Actual <b>${esc(actual)}</b></span>`);
+  return parts.length ? `<div class="econ-stats">${parts.join("")}</div>` : "";
+}
+
+// Previous/Forecast/Actual as three genuine side-by-side columns (a small
+// table, column headers rendered once via econTableHead() below) instead of
+// stacked lines. Always renders all three cells so every row lines up under
+// the header - a missing value shows as a faint dash rather than collapsing
+// the column. Order is Prev -> Fcst -> Actual per Billy's ask (reads
+// left-to-right as "what it was, what's expected, what it came in at").
+function buildEconStatsRow(prior, forecast, actual) {
+  const cell = (v, cls) => v !== null
+    ? `<span class="econ-stat-cell ${cls}">${esc(v)}</span>`
+    : `<span class="econ-stat-cell empty">-</span>`;
+  return `<div class="econ-stats-row">${cell(prior, "prior")}${cell(forecast, "forecast")}${cell(actual, "actual")}</div>`;
+}
+
+function econTableHead(scope) {
+  // "Collapse all" master toggle only makes sense on the day-grouped views
+  // (This Week / Next Week) - Today is a single day with nothing to group.
+  // Initial label is a placeholder; syncCollapseAllLabel() corrects it right
+  // after render based on the actual persisted per-day state.
+  const toggle = (scope === "week" || scope === "nextweek")
+    ? `<button type="button" class="econ-collapse-all" data-scope="${scope}">Collapse all</button>`
+    : "";
+  return `
+    <div class="econ-table-head">
+      <div class="econ-table-head-spacer">${toggle}</div>
+      <div class="econ-table-head-cols"><span>Prev</span><span>Fcst</span><span>Actual</span></div>
+    </div>
+  `;
+}
+
+// Flips every day-group within a scope together: if any day is currently
+// expanded, collapses all of them; if all are already collapsed, expands
+// all of them. Mirrors the per-day toggleEconDay() persistence so a
+// "collapse all" survives the 90s auto-poll re-render and page reloads.
+function toggleAllEconDays(scope) {
+  const groups = document.querySelectorAll(`.econ-day-group[data-day-key^="${scope}:"]`);
+  if (!groups.length) return;
+  const anyExpanded = Array.from(groups).some(g => !g.classList.contains("collapsed"));
+  const state = getEconDayState();
+  groups.forEach(g => {
+    g.classList.toggle("collapsed", anyExpanded);
+    state[g.dataset.dayKey] = anyExpanded;
+  });
+  saveEconDayState(state);
+  syncCollapseAllLabel(scope);
+}
+
+// Sets the "Collapse all" / "Expand all" button label to match the actual
+// rendered state (called right after render, since the button is built
+// before the day-groups exist to inspect).
+function syncCollapseAllLabel(scope) {
+  const btn = document.querySelector(`.econ-collapse-all[data-scope="${scope}"]`);
+  if (!btn) return;
+  const groups = document.querySelectorAll(`.econ-day-group[data-day-key^="${scope}:"]`);
+  if (!groups.length) return;
+  const anyExpanded = Array.from(groups).some(g => !g.classList.contains("collapsed"));
+  btn.textContent = anyExpanded ? "Collapse all" : "Expand all";
+}
+
+// Branded break line separating each day within This Week / Next Week
+// (multi-day views), e.g. "Monday, July 6" - so Billy doesn't have to read
+// the date out of every single row's meta text. Today is a single day, so
+// it doesn't use this. Parsed as local midnight (not UTC) to avoid an
+// off-by-one on the weekday/date shown. Clickable (see toggleEconDay
+// below) to fold/unfold that day's rows - a full week can otherwise run
+// long.
+function econDayHeader(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  const label = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  return `<div class="econ-day-header"><span>${esc(label)}</span><span class="day-chevron">&#9662;</span></div>`;
+}
+
+// Collapse state for individual econ calendar days, persisted the same way
+// as the panel-collapse state (localStorage) so a fold survives the 90s
+// auto-poll re-render and page reloads. Keyed by "scope:date" since Today
+// doesn't use day-groups and This Week / Next Week each have their own
+// independent set of dates.
+const ECON_DAY_STATE_KEY = "coinfish_econ_day_state";
+
+function getEconDayState() {
+  try { return JSON.parse(localStorage.getItem(ECON_DAY_STATE_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+
+function saveEconDayState(state) {
+  try { localStorage.setItem(ECON_DAY_STATE_KEY, JSON.stringify(state)); }
+  catch (e) { /* ignore */ }
+}
+
+let econTodayRendered = [];
+let econWeekRendered = [];
+let econNextWeekRendered = [];
+
+function renderEcon() {
+  const econEl = document.getElementById("econList");
+  const impactRank = { High: 0, Medium: 1, Low: 2 };
+  if (econScope === "today") {
+    const sorted = [...econToday].sort((a, b) => (impactRank[a.importance] ?? 2) - (impactRank[b.importance] ?? 2));
+    econTodayRendered = sorted.slice(0, 14);
+    econEl.innerHTML = econTodayRendered.length ? econTableHead("today") + econTodayRendered.map((e, i) => {
+      const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+      return `
+      <div class="cal-row econ-row" data-scope="today" data-idx="${i}">
+        <div class="econ-row-left">
+          <span class="name"><span class="impact-dot ${esc((e.importance || 'low').toLowerCase())}"></span>${countryFlag(e.country)} ${esc(e.eventName)}</span>
+          <span class="meta">${esc(e.gmt)}</span>
+        </div>
+        ${statsRow}
+      </div>
+    `;
+    }).join("") : '<div class="empty">No events found for today.</div>';
+  } else if (econScope === "week") {
+    // No slice cap here (unlike Today, which is deliberately capped to the
+    // top 14 by importance) - This Week spans up to 7 days and a fixed cap
+    // was silently cutting off Thursday/Friday once earlier days used up
+    // the budget. Collapsible day-groups keep it visually manageable
+    // instead, so show every event that came back from the backend.
+    econWeekRendered = econWeekList;
+    econEl.innerHTML = econWeekRendered.length ? econTableHead("week") + renderEconDayGroups(econWeekRendered, "week")
+      : '<div class="empty">No events found this week.</div>';
+    syncCollapseAllLabel("week");
+  } else {
+    econNextWeekRendered = econNextWeekList;
+    econEl.innerHTML = econNextWeekRendered.length ? econTableHead("nextweek") + renderEconDayGroups(econNextWeekRendered, "nextweek")
+      : '<div class="empty">No events found for next week.</div>';
+    syncCollapseAllLabel("nextweek");
+  }
+}
+
+// Shared by "week"/"nextweek": walks the (already date-sorted) rendered
+// array, groups it into one collapsible <div> per day (a branded header
+// plus that day's rows), so multi-day views read as day-separated,
+// foldable blocks instead of one long list. Each event row's meta drops
+// the date (now conveyed by the header above it) and shows just the time.
+function renderEconDayGroups(list, scope) {
+  const dayState = getEconDayState();
+  let html = "";
+  let lastDate = null;
+  let groupOpen = false;
+  list.forEach((e, i) => {
+    if (e.date !== lastDate) {
+      if (groupOpen) html += `</div>`;
+      lastDate = e.date;
+      const dayKey = `${scope}:${lastDate}`;
+      const isCollapsed = !!dayState[dayKey];
+      html += `<div class="econ-day-group${isCollapsed ? " collapsed" : ""}" data-day-key="${esc(dayKey)}">`;
+      html += econDayHeader(lastDate);
+      groupOpen = true;
+    }
+    const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+    html += `
+      <div class="cal-row econ-row" data-scope="${scope}" data-idx="${i}">
+        <div class="econ-row-left">
+          <span class="name"><span class="impact-dot ${esc((e.importance || 'low').toLowerCase())}"></span>${countryFlag(e.country)} ${esc(e.eventName)}</span>
+          <span class="meta">${esc(e.gmt)}</span>
+        </div>
+        ${statsRow}
+      </div>
+    `;
+  });
+  if (groupOpen) html += `</div>`;
+  return html;
+}
+
+function toggleEconDay(groupEl) {
+  const key = groupEl.dataset.dayKey;
+  const collapsed = groupEl.classList.toggle("collapsed");
+  const state = getEconDayState();
+  state[key] = collapsed;
+  saveEconDayState(state);
+}
+
+// Econ calendar click popup - same dark card / gold border branding as
+// coinfish-playbook.html's ticker popup, positioned near the clicked row.
+const IMPACT_COLOR = { high: "var(--red)", medium: "var(--gold-bright)", low: "var(--muted)" };
+let activeEconKey = null;
+const econPopup = document.getElementById("econPopup");
+
+function showEconPopup(rowEl) {
+  const scope = rowEl.dataset.scope;
+  const idx = Number(rowEl.dataset.idx);
+  const key = scope + ":" + idx;
+
+  if (activeEconKey === key) { closeEconPopup(); return; }
+  document.querySelectorAll(".econ-row.econ-row-active").forEach(el => el.classList.remove("econ-row-active"));
+  activeEconKey = key;
+  rowEl.classList.add("econ-row-active");
+
+  const e = scope === "today" ? econTodayRendered[idx] : scope === "week" ? econWeekRendered[idx] : econNextWeekRendered[idx];
+  if (!e) { closeEconPopup(); return; }
+
+  // "today"/"week"/"nextweek" all share the same Nasdaq-sourced field
+  // shape now (eventName/importance/gmt/consensus/actual/previous).
+  const title = e.eventName;
+  const importance = e.importance || "Low";
+  const color = IMPACT_COLOR[importance.toLowerCase()] || IMPACT_COLOR.low;
+  const when = scope === "today" ? `Today · ${e.gmt || ""}` : `${e.date || ""} ${e.gmt || ""}`;
+  const country = e.country ? ` · ${e.country}` : "";
+
+  const stats = buildEconStats(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+
+  econPopup.innerHTML = `
+    <div class="econ-pop-head">
+      <span class="econ-pop-label">${countryFlag(e.country)} ${esc(title)}</span>
+      <span class="econ-pop-badge" style="color:${color};background:${color}26">${esc(importance)}</span>
+    </div>
+    <div class="econ-pop-meta">${esc(when)}${esc(country)}</div>
+    ${stats.replace('class="econ-stats"', 'class="econ-stats econ-pop-stats"')}
+    <div class="econ-pop-section"><span class="econ-pop-kicker">What it measures</span><p>${esc(e.edu_what || "")}</p></div>
+    <div class="econ-pop-section econ-pop-trade"><span class="econ-pop-kicker">How it may affect trading</span><p>${esc(e.edu_trade || "")}</p></div>
+  `;
+
+  econPopup.style.display = "block";
+  const rect = rowEl.getBoundingClientRect();
+  const pw = 380, ph = econPopup.offsetHeight || 260;
+  let left = rect.left;
+  let top = rect.bottom + 8;
+  if (left + pw > window.innerWidth - 12) left = window.innerWidth - pw - 12;
+  if (top + ph > window.innerHeight - 12) top = rect.top - ph - 8;
+  if (top < 12) top = 12;
+  econPopup.style.left = left + "px";
+  econPopup.style.top = top + "px";
+}
+
+function closeEconPopup() {
+  econPopup.style.display = "none";
+  activeEconKey = null;
+  document.querySelectorAll(".econ-row.econ-row-active").forEach(el => el.classList.remove("econ-row-active"));
+}
+
+document.addEventListener("click", function(e) {
+  const collapseAllBtn = e.target.closest(".econ-collapse-all");
+  if (collapseAllBtn) { toggleAllEconDays(collapseAllBtn.dataset.scope); return; }
+  const dayHead = e.target.closest(".econ-day-header");
+  if (dayHead) { toggleEconDay(dayHead.closest(".econ-day-group")); return; }
+  const row = e.target.closest(".econ-row");
+  if (row) { showEconPopup(row); return; }
+  if (!e.target.closest("#econPopup")) closeEconPopup();
+});
+
+let allMovers = [];
+
+function renderMovers() {
+  const el = document.getElementById("moversList");
+  let list = allMovers;
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    list = list.filter(m => (m.ticker || "").toLowerCase().includes(q));
+  }
+  if (!list.length) {
+    el.innerHTML = '<div class="empty">No premarket movers available right now.</div>';
+    return;
+  }
+  el.innerHTML = list.map((m, i) => {
+    const up = m.pct_change >= 0;
+    const dir = up ? "up" : "down";
+    const sign = up ? "+" : "";
+    const logoUrl = `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(m.ticker)}.png`;
+    const initials = m.ticker.replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase();
+    const tag = m.session === "pre" ? "PRE" : "DAY";
+    const price = m.price != null ? "$" + m.price.toFixed(2) : "-";
+    return `
+      <div class="mover-row">
+        <span class="mover-rank">${i + 1}</span>
+        <img class="mover-logo" src="${logoUrl}" alt="" loading="lazy"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <span class="mover-logo-fallback">${esc(initials)}</span>
+        <span class="mover-ticker">${esc(m.ticker)}</span>
+        <span class="mover-dot ${dir}"></span>
+        <span class="mover-tag">${tag}</span>
+        <span class="mover-price">${price}</span>
+        <span class="mover-pct ${dir}">${sign}${m.pct_change.toFixed(2)}%</span>
+      </div>
+    `;
+  }).join("");
+}
+
+async function loadMovers() {
+  const j = await getJSON("/api/movers");
+  allMovers = j.movers || [];
+  document.getElementById("moversAsOf").textContent = allMovers.length ? allMovers.length + " names" : "-";
+  renderMovers();
+}
+
+// Formats a raw market cap number the way financial sites do: $2.98T,
+// $450.2B, $12.3M - always 1 decimal place, biggest unit that fits.
+function formatMarketCap(v) {
+  if (v == null) return "-";
+  const abs = Math.abs(v);
+  if (abs >= 1e12) return "$" + (v / 1e12).toFixed(2) + "T";
+  if (abs >= 1e9) return "$" + (v / 1e9).toFixed(1) + "B";
+  if (abs >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
+  return "$" + v.toLocaleString();
+}
+
+let allMarketCapLeaders = [];
+
+function renderMarketCap() {
+  const el = document.getElementById("marketCapList");
+  let list = allMarketCapLeaders;
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    list = list.filter(m => (m.ticker || "").toLowerCase().includes(q));
+  }
+  if (!list.length) {
+    el.innerHTML = '<div class="empty">No market cap data available right now.</div>';
+    return;
+  }
+  // Reuses the same .mover-* row styling as Biggest Pre-Market Movers
+  // (logo treatment, layout) per Billy's ask - just swaps the trailing
+  // stat column from a %-change figure to market cap, and shows price
+  // where the movers row shows its session tag.
+  el.innerHTML = list.map((m, i) => {
+    const logoUrl = `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(m.ticker)}.png`;
+    const initials = m.ticker.replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase();
+    const price = m.price != null ? "$" + m.price.toFixed(2) : "-";
+    return `
+      <div class="mover-row">
+        <span class="mover-rank">${i + 1}</span>
+        <img class="mover-logo" src="${logoUrl}" alt="" loading="lazy"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <span class="mover-logo-fallback">${esc(initials)}</span>
+        <span class="mover-ticker">${esc(m.ticker)}</span>
+        <span class="mover-price">${price}</span>
+        <span class="mover-pct mcap-val">${formatMarketCap(m.market_cap)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+async function loadMarketCap() {
+  const j = await getJSON("/api/marketcap");
+  allMarketCapLeaders = j.leaders || [];
+  document.getElementById("marketCapAsOf").textContent = allMarketCapLeaders.length ? allMarketCapLeaders.length + " names" : "-";
+  renderMarketCap();
+}
+
+// ---- Sector Heatmap (tradingterminal.com-style treemap, Coinfish colors) ----
+
+// Squarified treemap layout - the standard Bruls/Huizing/van Wijk algorithm.
+// Takes items with a numeric `.value`, lays them into the given pixel rect,
+// returns the same items each carrying a `.rect = {x,y,w,h}`. Used twice:
+// once for the sector-level blocks, once per sector for its ticker cells.
+function squarify(items, x, y, w, h) {
+  const positive = items.filter(it => it.value > 0);
+  if (!positive.length || w <= 0 || h <= 0) return [];
+  const total = positive.reduce((s, it) => s + it.value, 0);
+  const scale = (w * h) / total;
+  const sorted = positive.slice().sort((a, b) => b.value - a.value)
+    .map(it => Object.assign({}, it, { area: it.value * scale }));
+
+  function worstAspect(row, sideLen) {
+    const rowArea = row.reduce((s, it) => s + it.area, 0);
+    if (rowArea <= 0 || sideLen <= 0) return Infinity;
+    const thickness = rowArea / sideLen;
+    let worst = 0;
+    row.forEach(it => {
+      const len = it.area / thickness;
+      worst = Math.max(worst, Math.max(thickness / len, len / thickness));
+    });
+    return worst;
+  }
+
+  const results = [];
+  let container = { x, y, w, h };
+  let remaining = sorted;
+
+  while (remaining.length) {
+    const sideLen = Math.min(container.w, container.h);
+    let row = [remaining[0]];
+    let i = 1;
+    while (i < remaining.length) {
+      const trial = row.concat([remaining[i]]);
+      if (worstAspect(trial, sideLen) <= worstAspect(row, sideLen)) {
+        row = trial;
+        i++;
+      } else {
+        break;
+      }
+    }
+    const rowArea = row.reduce((s, it) => s + it.area, 0);
+    if (container.w < container.h) {
+      // Row spans the full width as a horizontal strip along the top.
+      const stripH = rowArea / container.w;
+      let cx = container.x;
+      row.forEach(it => {
+        const itemW = it.area / stripH;
+        results.push(Object.assign({}, it, { rect: { x: cx, y: container.y, w: itemW, h: stripH } }));
+        cx += itemW;
+      });
+      container = { x: container.x, y: container.y + stripH, w: container.w, h: container.h - stripH };
+    } else {
+      // Row spans the full height as a vertical strip along the left.
+      const stripW = rowArea / container.h;
+      let cy = container.y;
+      row.forEach(it => {
+        const itemH = it.area / stripW;
+        results.push(Object.assign({}, it, { rect: { x: container.x, y: cy, w: stripW, h: itemH } }));
+        cy += itemH;
+      });
+      container = { x: container.x + stripW, y: container.y, w: container.w - stripW, h: container.h };
+    }
+    remaining = remaining.slice(row.length);
+  }
+  return results;
+}
+
+let heatmapData = [];
+
+function heatmapColor(pct) {
+  // Clamped to +/-4% for full color saturation - small moves stay muted
+  // against the navy background, big moves pop, same "read the size and
+  // color at a glance" idea as tradingterminal.com's heatmap.
+  const clamped = Math.max(-4, Math.min(4, pct || 0));
+  const t = Math.abs(clamped) / 4;
+  const alpha = (0.25 + t * 0.65).toFixed(2);
+  return clamped >= 0 ? `rgba(54,213,126,${alpha})` : `rgba(232,80,91,${alpha})`;
+}
+
+function renderHeatmap() {
+  const el = document.getElementById("heatmapTreemap");
+  if (!el) return;
+  if (!heatmapData.length) {
+    el.innerHTML = '<div class="empty">No heatmap data available right now.</div>';
+    return;
+  }
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  if (!w || !h) return; // panel collapsed or not yet laid out - nothing to measure against
+
+  const bySector = {};
+  heatmapData.forEach(d => { (bySector[d.sector] = bySector[d.sector] || []).push(d); });
+  const sectorItems = Object.keys(bySector).map(sector => ({
+    value: bySector[sector].reduce((s, d) => s + d.market_cap, 0),
+    sector,
+    tickers: bySector[sector],
+  }));
+
+  const sectorRects = squarify(sectorItems, 0, 0, w, h);
+  let html = "";
+
+  sectorRects.forEach(sr => {
+    const { x, y, w: sw, h: sh } = sr.rect;
+    if (sw < 4 || sh < 4) return;
+    const labelH = sh > 40 ? 18 : 0;
+    html += `<div class="heatmap-sector" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;">`;
+    if (labelH) html += `<div class="heatmap-sector-label">${esc(sr.sector)}</div>`;
+    html += `</div>`;
+
+    const innerY = labelH, innerH = sh - labelH;
+    if (innerH <= 4 || sw <= 4) return;
+    const tickerItems = sr.tickers.map(t => ({ value: t.market_cap, data: t }));
+    const cellRects = squarify(tickerItems, 0, 0, sw, innerH);
+    cellRects.forEach(cr => {
+      const { x: cx, y: cy, w: cw, h: ch } = cr.rect;
+      if (cw < 2 || ch < 2) return;
+      const d = cr.data;
+      const bg = heatmapColor(d.pct_change);
+      const showText = cw > 34 && ch > 22;
+      const fontSize = Math.max(9, Math.min(15, Math.floor(Math.min(cw, ch) / 4)));
+      html += `
+        <div class="heatmap-cell" data-ticker="${esc(d.ticker)}"
+             style="left:${(x + cx).toFixed(1)}px;top:${(y + innerY + cy).toFixed(1)}px;width:${cw.toFixed(1)}px;height:${ch.toFixed(1)}px;background:${bg};"
+             title="${esc(d.ticker)} ${d.pct_change >= 0 ? "+" : ""}${d.pct_change.toFixed(2)}%">
+          ${showText ? `
+            <span class="hc-ticker" style="font-size:${fontSize}px;">${esc(d.ticker)}</span>
+            <span class="hc-pct" style="font-size:${Math.max(8, fontSize - 3)}px;">${d.pct_change >= 0 ? "+" : ""}${d.pct_change.toFixed(2)}%</span>
+          ` : ""}
+        </div>
+      `;
+    });
+  });
+
+  el.innerHTML = html;
+}
+
+async function loadHeatmap() {
+  const j = await getJSON("/api/heatmap");
+  heatmapData = j.cells || [];
+  document.getElementById("heatmapAsOf").textContent = heatmapData.length ? heatmapData.length + " names" : "-";
+  renderHeatmap();
+}
+
+// Colors the line per-segment relative to the PREVIOUS CLOSE (green
+// above, red below) instead of a single flat color for the whole line,
+// and draws a dashed reference line at the previous-close price - same
+// reference point as the heatmap cell color and the %-change badge, so
+// the sparkline never contradicts the rest of the popup (was keyed off
+// today's open originally, which could show e.g. a green cell/badge next
+// to a red line if the stock was up on the day but had drifted down
+// since the open - switched to previous close per Billy so all three
+// agree). Segments that cross the previous-close price mid-way are split
+// at the crossing point so the color change lands exactly on the line,
+// not at the nearest data point.
+function drawSparkline(points, prevClose) {
+  const svg = document.getElementById("hmpSpark");
+  if (!svg || !points || points.length < 2) return;
+  const w = 300, h = 46;
+  const hasRef = prevClose != null && !isNaN(prevClose);
+  const allVals = hasRef ? points.concat([prevClose]) : points;
+  const min = Math.min(...allVals), max = Math.max(...allVals);
+  const range = (max - min) || 1;
+  const stepX = w / (points.length - 1);
+  const xOf = i => i * stepX;
+  const yOf = v => h - ((v - min) / range) * h;
+  const green = FG_SVG_COLORS.green, red = FG_SVG_COLORS.red;
+
+  if (!hasRef) {
+    // No previous-close price to compare against (shouldn't normally
+    // happen) - fall back to a single flat color based on net change
+    // over the window.
+    const up = points[points.length - 1] >= points[0];
+    const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(p).toFixed(1)}`).join(" ");
+    svg.innerHTML = `<path d="${d}" fill="none" stroke="${up ? green : red}" stroke-width="2"/>`;
+    return;
+  }
+
+  const segs = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i], p1 = points[i + 1];
+    const x0 = xOf(i), x1 = xOf(i + 1);
+    const side0 = p0 >= prevClose, side1 = p1 >= prevClose;
+    if (side0 === side1) {
+      segs.push({ x0, y0: yOf(p0), x1, y1: yOf(p1), color: side0 ? green : red });
+    } else {
+      const t = (prevClose - p0) / (p1 - p0);
+      const xi = x0 + (x1 - x0) * t;
+      const yi = yOf(prevClose);
+      segs.push({ x0, y0: yOf(p0), x1: xi, y1: yi, color: side0 ? green : red });
+      segs.push({ x0: xi, y0: yi, x1, y1: yOf(p1), color: side1 ? green : red });
+    }
+  }
+  const refY = yOf(prevClose).toFixed(1);
+  const paths = segs.map(s =>
+    `<path d="M${s.x0.toFixed(1)},${s.y0.toFixed(1)} L${s.x1.toFixed(1)},${s.y1.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="2"/>`
+  ).join("");
+  svg.innerHTML = `<line x1="0" y1="${refY}" x2="${w}" y2="${refY}" stroke="${FG_SVG_COLORS.muted}" stroke-width="1" stroke-dasharray="3,3"/>${paths}`;
+}
+
+// Tracks which ticker's popup is currently showing (or being fetched for)
+// so a slow/in-flight sparkline request from a ticker the mouse has since
+// left can't land its data into a different ticker's now-open popup - the
+// #hmpSpark id gets reused across every hover since the popup HTML is
+// rebuilt each time.
+let activeHeatmapTicker = null;
+
+async function showHeatmapPopup(ticker, cellEl) {
+  const d = heatmapData.find(x => x.ticker === ticker);
+  const popup = document.getElementById("heatmapPopup");
+  if (!d || !popup) return;
+  activeHeatmapTicker = ticker;
+
+  const up = d.pct_change >= 0;
+  const color = up ? FG_SVG_COLORS.green : FG_SVG_COLORS.red;
+  const logoUrl = `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(d.ticker)}.png`;
+  const initials = d.ticker.replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase();
+  const fmtPrice = v => v != null ? "$" + Number(v).toFixed(2) : "-";
+
+  popup.innerHTML = `
+    <div class="hmp-head">
+      <img class="hmp-logo" src="${logoUrl}" alt="" loading="lazy"
+           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+      <span class="hmp-logo-fallback">${esc(initials)}</span>
+      <div class="hmp-titles">
+        <div class="hmp-ticker">${esc(d.ticker)}</div>
+        <div class="hmp-name">${esc(d.name)}</div>
+      </div>
+      <div class="hmp-price-block">
+        <div class="hmp-price">${fmtPrice(d.price)}</div>
+        <span class="hmp-pct-badge" style="color:${color};background:${color}26">${up ? "+" : ""}${d.pct_change.toFixed(2)}%</span>
+      </div>
+    </div>
+    <svg class="hmp-spark" id="hmpSpark" viewBox="0 0 300 46" preserveAspectRatio="none"></svg>
+    <table class="hmp-table">
+      <tr><td class="hmp-label">Sector</td><td class="hmp-val">${esc(d.sector)}</td></tr>
+      <tr><td class="hmp-label">Industry</td><td class="hmp-val">${esc(d.industry)}</td></tr>
+      <tr><td class="hmp-label">Market cap</td><td class="hmp-val">${formatMarketCap(d.market_cap)}</td></tr>
+      <tr><td class="hmp-label">Open</td><td class="hmp-val">${fmtPrice(d.open)}</td></tr>
+      <tr><td class="hmp-label">High</td><td class="hmp-val">${fmtPrice(d.high)}</td></tr>
+      <tr><td class="hmp-label">Low</td><td class="hmp-val">${fmtPrice(d.low)}</td></tr>
+      <tr><td class="hmp-label">Previous Close</td><td class="hmp-val">${fmtPrice(d.prev_close)}</td></tr>
+    </table>
+  `;
+
+  popup.style.display = "block";
+  const rect = cellEl.getBoundingClientRect();
+  const pw = 340, ph = popup.offsetHeight || 280;
+  let left = rect.left;
+  let top = rect.bottom + 8;
+  if (left + pw > window.innerWidth - 12) left = window.innerWidth - pw - 12;
+  if (left < 12) left = 12;
+  if (top + ph > window.innerHeight - 12) top = rect.top - ph - 8;
+  if (top < 12) top = 12;
+  popup.style.left = left + "px";
+  popup.style.top = top + "px";
+
+  // Sparkline is fetched on-demand (see app.py's /api/sparkline route) -
+  // draw it in once it lands rather than blocking the rest of the popup.
+  // Guarded against staleness: if the mouse has already moved to a
+  // different ticker by the time this resolves, activeHeatmapTicker will
+  // no longer match and the draw is skipped so the wrong sparkline can't
+  // land in the (now different) popup.
+  try {
+    const r = await fetch(`/api/sparkline/${encodeURIComponent(ticker)}`);
+    const j = await r.json();
+    if (activeHeatmapTicker === ticker) drawSparkline(j.points || [], d.prev_close);
+  } catch (e) { /* leave the sparkline area blank on failure */ }
+}
+
+function closeHeatmapPopup() {
+  activeHeatmapTicker = null;
+  const popup = document.getElementById("heatmapPopup");
+  if (popup) popup.style.display = "none";
+}
+
+// Hover-driven instead of click-driven: popup appears on mouseover of a
+// cell and disappears on mouseout, but only when the mouse truly leaves
+// the heatmap/popup (checked via relatedTarget) so moving from one cell
+// straight onto another - or off a cell into the popup itself - doesn't
+// flicker the popup closed and reopened.
+document.addEventListener("mouseover", function(e) {
+  const cell = e.target.closest(".heatmap-cell");
+  if (cell) showHeatmapPopup(cell.dataset.ticker, cell);
+});
+
+document.addEventListener("mouseout", function(e) {
+  const fromCell = e.target.closest(".heatmap-cell");
+  if (!fromCell) return;
+  const to = e.relatedTarget;
+  if (to && (to.closest(".heatmap-cell") || to.closest("#heatmapPopup"))) return;
+  closeHeatmapPopup();
+});
+
+// Treemap boxes are absolutely positioned in pixels, so a window resize
+// needs a re-layout (unlike the rest of the page, which is fluid CSS).
+let heatmapResizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(heatmapResizeTimer);
+  heatmapResizeTimer = setTimeout(renderHeatmap, 150);
+});
+
+let allEarnings = [];
+
+function renderEarnings() {
+  const el = document.getElementById("earningsList");
+  let list = allEarnings;
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    list = list.filter(e => (e.symbol || "").toLowerCase().includes(q) || (e.name || "").toLowerCase().includes(q));
+  }
+  if (!list.length) { el.innerHTML = '<div class="empty">No watchlist earnings in the next 14 days.</div>'; return; }
+  el.innerHTML = list.slice(0, 20).map(e => {
+    const when = e.time === "time-pre-market" ? "Pre-mkt" : e.time === "time-after-hours" ? "After close" : "";
+    return `
+      <div class="cal-row">
+        <span class="name">${tickerLogoHTML(e.symbol, 16)}<span class="ticker-tag">${esc(e.symbol)}</span> ${esc(e.name)}</span>
+        <span class="meta">${esc(e.date)}${when ? " · " + when : ""}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+async function loadCalendar() {
+  const j = await getJSON("/api/calendar");
+
+  econToday = j.economic_today || [];
+  econWeekList = j.economic_week || [];
+  econNextWeekList = j.economic_next_week || [];
+  renderEcon();
+
+  const divEl = document.getElementById("divWatchlist");
+  const divs = j.dividends_watchlist || [];
+  divEl.innerHTML = divs.length ? divs.map(d => `
+    <div class="cal-row">
+      <span class="name">${esc(d.symbol)}</span>
+      <span class="meta">${esc(d.dividend_Rate)} · pay ${esc(d.payment_Date)}</span>
+    </div>
+  `).join("") : '<div class="empty">None of your watchlist go ex-div today.</div>';
+
+  allEarnings = j.earnings_watchlist || [];
+  renderEarnings();
+
+  const ipoEl = document.getElementById("ipoList");
+  const upcoming = (j.ipo && j.ipo.upcoming && j.ipo.upcoming.upcomingTable && j.ipo.upcoming.upcomingTable.rows) || [];
+  ipoEl.innerHTML = upcoming.length ? upcoming.slice(0, 8).map(r => `
+    <div class="cal-row">
+      <span class="name">${esc(r.proposedTickerSymbol || r.symbol)}</span>
+      <span class="meta">${esc(r.companyName)}</span>
+    </div>
+  `).join("") : '<div class="empty">No upcoming IPOs listed.</div>';
+}
+
+async function loadAll() {
+  try {
+    await Promise.all([loadTape(), loadNews(), loadMovers(), loadMarketCap(), loadHeatmap(), loadFilings(), loadCalendar(), loadMacro()]);
+    setStatus(true);
+  } catch (e) {
+    console.error(e);
+    setStatus(false);
+  }
+}
+
+// ---- Collapsible sections ----
+const PANEL_STATE_KEY = "coinfish_panel_state";
+
+function getPanelState() {
+  try { return JSON.parse(localStorage.getItem(PANEL_STATE_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+
+function savePanelState(state) {
+  try { localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(state)); }
+  catch (e) { /* ignore */ }
+}
+
+function togglePanel(container) {
+  const key = container.dataset.key;
+  const collapsed = container.classList.toggle("collapsed");
+  const state = getPanelState();
+  state[key] = collapsed;
+  savePanelState(state);
+  // The treemap measures its own pixel width to lay itself out, which is 0
+  // while [data-key].collapsed hides the panel body - if it starts
+  // collapsed (a returning user's saved state) the first renderHeatmap()
+  // call in loadAll() draws nothing. Re-render once it's actually visible.
+  if (key === "heatmap" && !collapsed) renderHeatmap();
+}
+
+function expandPanel(key) {
+  const el = document.querySelector(`[data-key="${key}"]`);
+  if (!el) return;
+  el.classList.remove("collapsed");
+  const state = getPanelState();
+  state[key] = false;
+  savePanelState(state);
+}
+
+function initPanels() {
+  const state = getPanelState();
+  document.querySelectorAll("[data-key]").forEach(container => {
+    const key = container.dataset.key;
+    if (state[key]) container.classList.add("collapsed");
+    const head = container.querySelector(":scope > .panel-head, :scope > .sidebar-head");
+    if (head) head.addEventListener("click", () => togglePanel(container));
+  });
+}
+
+// ---- Scope toggles (Watchlist/All Market, Today/Week) ----
+function wireScopeToggle(id, setter) {
+  const wrap = document.getElementById(id);
+  if (!wrap) return;
+  wrap.querySelectorAll(".pill").forEach(btn => {
+    btn.onclick = () => {
+      wrap.querySelectorAll(".pill").forEach(b => b.classList.toggle("active", b === btn));
+      setter(btn.dataset.scope);
+    };
+  });
+}
+
+function initToggles() {
+  wireScopeToggle("filingsScopeRow", val => { filingsScope = val; renderFilings(); });
+  wireScopeToggle("form4ScopeRow", val => { form4Scope = val; renderForm4(); });
+  wireScopeToggle("econScopeRow", val => { econScope = val; renderEcon(); });
+}
+
+// ---- Quick nav (jump to + expand a section) ----
+function initQuickNav() {
+  document.querySelectorAll("#quickNav button[data-jump]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.jump;
+      expandPanel(key);
+      const el = document.querySelector(`[data-key="${key}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+}
+
+// ---- Search (filters News / Filings / Insider / Earnings client-side) ----
+function initSearch() {
+  const input = document.getElementById("searchInput");
+  const clearBtn = document.getElementById("searchClear");
+
+  const apply = () => {
+    renderNews();
+    renderMovers();
+    renderMarketCap();
+    renderFilings();
+    renderForm4();
+    renderEarnings();
+    if (searchTerm) {
+      ["news", "movers", "marketcap", "filings", "form4", "earnings"].forEach(expandPanel);
+    }
+  };
+
+  input.addEventListener("input", () => {
+    searchTerm = input.value.trim();
+    clearBtn.style.display = searchTerm ? "block" : "none";
+    apply();
+  });
+
+  clearBtn.addEventListener("click", () => {
+    input.value = "";
+    searchTerm = "";
+    clearBtn.style.display = "none";
+    apply();
+    input.focus();
+  });
+}
+
+// ---- Light / dark theme toggle (top-right corner, persisted) ----
+function initTheme() {
+  const btn = document.getElementById("themeToggle");
+  const KEY = "coinfish_theme";
+
+  const apply = (theme) => {
+    document.body.classList.toggle("light-theme", theme === "light");
+    btn.textContent = theme === "light" ? "🌙" : "☀️";
+    btn.title = theme === "light" ? "Switch to dark mode" : "Switch to light mode";
+  };
+
+  apply(localStorage.getItem(KEY) === "light" ? "light" : "dark");
+
+  btn.addEventListener("click", () => {
+    const next = document.body.classList.contains("light-theme") ? "dark" : "light";
+    localStorage.setItem(KEY, next);
+    apply(next);
+  });
+}
+
+initTheme();
+initPanels();
+initToggles();
+initQuickNav();
+initSearch();
+loadAll();
+setInterval(loadAll, 90000);
+</script>
+
+</body>
+</html>
