@@ -792,25 +792,30 @@ def fetch_ticker_tape(tickers, max_workers=12):
 # so the widget still shows something meaningful outside premarket hours.
 # ---------------------------------------------------------------------------
 
-def _yf_info_retry(ticker, retries=3, base_delay=0.6):
+def _yf_fast_info_retry(ticker, retries=3, base_delay=0.6):
     """
-    yf.Ticker(t).info wrapped with retry+backoff. Added after the
-    Movers/Market Cap/Heatmap widgets came back 100% "Expecting value: line
-    1 column 1 (char 0)" (a JSON-decode error, meaning Yahoo returned an
-    empty body) once this app was deployed on Railway - a fresh cloud IP
-    bursting 55+ concurrent .info calls trips Yahoo's rate limiter almost
-    immediately, even though the exact same code runs fine on Billy's home
-    IP. Same root cause already documented for the options-scanner backend
-    (see coinfish-hq/memory.md "yfinance options endpoint rate-limits
-    Railway's IP") - the fix there was sequential + retries instead of a
-    concurrent burst; this applies the same pattern; the caller also drops
-    max_workers to keep the burst small in the first place.
+    yf.Ticker(t).fast_info wrapped with retry+backoff - NOT the full .info.
+
+    History: Movers/Market Cap/Heatmap originally used the full .info call
+    and came back 100% "Expecting value: line 1 column 1 (char 0)" (a
+    JSON-decode error, meaning Yahoo returned an empty body) once this app
+    was deployed on Railway, even with retries and low concurrency. Root
+    cause turned out to be the endpoint, not the pacing: .info needs
+    Yahoo's quoteSummary API behind a cookie+crumb auth handshake, and that
+    handshake is what's actually blocked from Railway's cloud IP - so every
+    retry failed identically no matter how it was paced. fast_info uses the
+    plain chart API instead (no crumb needed), which is the exact same
+    thing fetch_ticker_tape/fetch_vix_snapshot/fetch_treasury_yields already
+    use and which works fine live on Railway. Switching these three
+    fetchers to fast_info fixed it. Tradeoff: fast_info has no company
+    name/industry/premarket fields, so those are degraded (see call sites).
+    Kept the retry+backoff wrapper anyway for ordinary transient hiccups.
     """
     last_exc = None
     for attempt in range(retries):
         try:
-            info = yf.Ticker(ticker).info
-            if info and info.get("regularMarketPrice") is not None:
+            info = yf.Ticker(ticker).fast_info
+            if info and getattr(info, "last_price", None) is not None:
                 return info, None
             last_exc = "empty/incomplete response"
         except Exception as exc:
@@ -820,37 +825,33 @@ def _yf_info_retry(ticker, retries=3, base_delay=0.6):
 
 
 def fetch_premarket_movers(tickers, max_workers=4, top_n=10):
+    """
+    NOTE: fast_info (see _yf_fast_info_retry) has no premarket-specific
+    fields, so this always reports the regular-session change now instead
+    of a true premarket move - a real premarket price needs the blocked
+    .info endpoint. Still useful as a "biggest movers" list, just not
+    premarket-specific outside market hours on the hosted deploy.
+    """
     results = []
     errors = []
 
     def _one(t):
         try:
-            info, err = _yf_info_retry(t)
+            info, err = _yf_fast_info_retry(t)
             if info is None:
                 return {"ticker": t, "error": err or "no data"}
-            state = info.get("marketState")
-            pre_price = info.get("preMarketPrice")
-            pre_pct = info.get("preMarketChangePercent")
-            reg_price = info.get("regularMarketPrice")
-            reg_pct = info.get("regularMarketChangePercent")
-            prev_close = info.get("regularMarketPreviousClose")
-
-            if pre_pct is not None and pre_price is not None:
-                price, pct, session = pre_price, pre_pct, "pre"
-            elif reg_pct is not None and reg_price is not None:
-                price, pct, session = reg_price, reg_pct, "day"
-            else:
-                return {"ticker": t, "error": "no premarket/regular data"}
-
+            price = getattr(info, "last_price", None)
+            prev_close = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
+            if price is None or prev_close is None or prev_close == 0:
+                return {"ticker": t, "error": "no price data"}
+            pct = (price - prev_close) / prev_close * 100
             return {
                 "ticker": t,
                 "price": round(float(price), 2),
                 "pct_change": round(float(pct), 2),
-                # "pre" = a real premarket move, "day" = regular-session
-                # fallback (used once the premarket session has ended).
-                "session": session,
-                "market_state": state,  # PRE / REGULAR / POST / POSTPOST / CLOSED
-                "prev_close": round(float(prev_close), 2) if prev_close is not None else None,
+                "session": "day",
+                "market_state": None,
+                "prev_close": round(float(prev_close), 2),
                 "error": None,
             }
         except Exception as exc:
@@ -873,19 +874,18 @@ def fetch_market_cap_leaders(tickers, max_workers=4, top_n=10):
     """
     Top N watchlist names by market cap, with current price - a companion
     widget to fetch_premarket_movers above (that one sorts by % move, this
-    one by size). Same yfinance .info per-ticker shape/threading pattern,
-    just pulling marketCap instead of pre/post-market price fields.
+    one by size). Uses fast_info - see _yf_fast_info_retry docstring.
     """
     results = []
     errors = []
 
     def _one(t):
         try:
-            info, err = _yf_info_retry(t)
+            info, err = _yf_fast_info_retry(t)
             if info is None:
                 return {"ticker": t, "error": err or "no data"}
-            cap = info.get("marketCap")
-            price = info.get("regularMarketPrice") or info.get("currentPrice")
+            cap = getattr(info, "market_cap", None)
+            price = getattr(info, "last_price", None)
             if cap is None or price is None:
                 return {"ticker": t, "error": "no market cap/price data"}
             return {
@@ -917,38 +917,41 @@ def fetch_heatmap_data(tickers, sector_map, max_workers=4):
     whole market): market cap (box size), % change (box color), plus the
     fields the click-through popup shows (price, open/high/low/previous
     close, sector, industry, company name). `sector_map` is the
-    ticker->sector lookup app.py builds from WATCHLIST_SECTORS - used
-    instead of yfinance's own "sector" field so the heatmap's grouping
-    always matches the same sector buckets Billy already sees on the
-    Sector Performance bars, rather than yfinance's occasionally-differently-
-    worded GICS sector names. "industry" (finer-grained, e.g. "Semiconductors")
-    still comes straight from yfinance since there's no in-house mapping for it.
+    ticker->sector lookup app.py builds from WATCHLIST_SECTORS.
+
+    Uses fast_info - see _yf_fast_info_retry docstring for why (the full
+    .info call this used to use is blocked on Railway's cloud IP). Tradeoff:
+    fast_info has no company-name or industry fields, so "name" falls back
+    to the ticker symbol and "industry" falls back to "-" on the hosted
+    deploy (both are populated normally when running locally, where .info
+    still works fine).
     """
     results = []
     errors = []
 
     def _one(t):
         try:
-            info, err = _yf_info_retry(t)
+            info, err = _yf_fast_info_retry(t)
             if info is None:
                 return {"ticker": t, "error": err or "no data"}
-            cap = info.get("marketCap")
-            price = info.get("regularMarketPrice") or info.get("currentPrice")
-            pct = info.get("regularMarketChangePercent")
+            cap = getattr(info, "market_cap", None)
+            price = getattr(info, "last_price", None)
+            prev_close = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
             if cap is None or price is None:
                 return {"ticker": t, "error": "no market cap/price data"}
+            pct = (price - prev_close) / prev_close * 100 if prev_close else 0.0
             return {
                 "ticker": t,
-                "name": info.get("shortName") or info.get("longName") or t,
-                "sector": sector_map.get(t, info.get("sector") or "Other"),
-                "industry": info.get("industry") or "-",
+                "name": t,
+                "sector": sector_map.get(t, "Other"),
+                "industry": "-",
                 "market_cap": int(cap),
                 "price": round(float(price), 2),
-                "pct_change": round(float(pct), 2) if pct is not None else 0.0,
-                "open": info.get("open") or info.get("regularMarketOpen"),
-                "high": info.get("dayHigh") or info.get("regularMarketDayHigh"),
-                "low": info.get("dayLow") or info.get("regularMarketDayLow"),
-                "prev_close": info.get("regularMarketPreviousClose") or info.get("previousClose"),
+                "pct_change": round(float(pct), 2),
+                "open": getattr(info, "open", None),
+                "high": getattr(info, "day_high", None),
+                "low": getattr(info, "day_low", None),
+                "prev_close": round(float(prev_close), 2) if prev_close is not None else None,
                 "error": None,
             }
         except Exception as exc:
