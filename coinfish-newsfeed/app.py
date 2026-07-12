@@ -52,14 +52,18 @@ TICKER_TO_SECTOR = {t: sector for sector, tickers in WATCHLIST_SECTORS.items() f
 # now gets included and can win a slot on its own merits. Saudi Aramco
 # (2222.SR) is excluded - yfinance can't reliably price/convert its native
 # Riyadh-listing currency.
-MARKET_CAP_UNIVERSE = sorted(set(WATCHLIST) | {
+MARKET_CAP_UNIVERSE = sorted((set(WATCHLIST) | {
     "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "AVGO", "TSLA",
     "BRK-B", "TSM", "WMT", "LLY", "JPM", "V", "MA", "NFLX", "ORCL", "XOM",
     "COST", "UNH", "JNJ", "HD", "PG", "NVO", "ASML", "SAP", "BAC", "CVX",
     "KO", "TMUS", "PM", "WFC", "ABBV", "IBM", "CRM", "CSCO", "MCD", "ABT",
     "PEP", "DIS", "VZ", "T", "CMCSA", "ADBE", "QCOM", "TXN", "INTU", "INTC",
     "NOW", "AMD", "UBER", "PDD", "BABA", "SHEL", "TM", "HSBC", "RY", "PLTR",
-} - {"SPY", "QQQ", "IWM"})  # index ETFs never belong in a market-cap ranking
+}) - {"SPY", "QQQ", "IWM"})  # index ETFs never belong in a market-cap ranking; parens
+# forced here because Python's set "-" binds tighter than "|", so without
+# them the subtraction only ever applied to the literal mega-cap set above,
+# never to WATCHLIST (which is where SPY/QQQ/IWM actually live) - bug found
+# during live verification, fixed same day.
 
 app = Flask(__name__, static_folder=".", static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
