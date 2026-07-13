@@ -824,32 +824,86 @@ def _yf_fast_info_retry(ticker, retries=3, base_delay=0.6):
     return None, last_exc
 
 
+# US market session boundaries (Eastern time, which is what yfinance's
+# history() index comes back tz-localized to for US tickers).
+_MARKET_OPEN_ET = _dt.strptime("09:30", "%H:%M").time()
+_MARKET_CLOSE_ET = _dt.strptime("16:00", "%H:%M").time()
+
+
+def _yf_prepost_price_retry(ticker, retries=2, base_delay=0.6):
+    """
+    Real premarket/afterhours price via yf.Ticker(t).history(interval="1m",
+    prepost=True). Same underlying chart-API endpoint as fast_info (no
+    crumb/cookie auth, confirmed working on Railway), but unlike
+    fast_info.last_price - which just freezes at the prior REGULAR session's
+    close and doesn't move again until the next regular session opens -
+    this actually carries live pre/post-market minute ticks.
+
+    Found 2026-07-13 debugging "movers doesn't update": fast_info.last_price
+    for AAPL was stuck at $315.32 (Friday's close) while the real premarket
+    tape had it trading ~$316.09 - fast_info simply has no premarket data at
+    all, it's not a caching or staleness bug, it's a field the endpoint
+    doesn't carry. history(prepost=True) does.
+
+    Returns (price, session, error) where session is one of
+    "premarket" / "regular" / "afterhours" based on the last bar's local
+    time, or (None, None, err) on failure.
+    """
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            hist = yf.Ticker(ticker).history(period="2d", interval="1m", prepost=True)
+            if hist is not None and not hist.empty:
+                last_ts = hist.index[-1]
+                price = hist["Close"].iloc[-1]
+                if price is None or (isinstance(price, float) and price != price):  # NaN check
+                    last_exc = "empty last bar"
+                else:
+                    t_local = last_ts.time()
+                    if t_local < _MARKET_OPEN_ET:
+                        session = "premarket"
+                    elif t_local >= _MARKET_CLOSE_ET:
+                        session = "afterhours"
+                    else:
+                        session = "regular"
+                    return float(price), session, None
+            else:
+                last_exc = "empty history"
+        except Exception as exc:
+            last_exc = str(exc)
+        time.sleep(base_delay * (attempt + 1))
+    return None, None, last_exc
+
+
 def fetch_premarket_movers(tickers, max_workers=4, top_n=10):
     """
-    NOTE: fast_info (see _yf_fast_info_retry) has no premarket-specific
-    fields, so this always reports the regular-session change now instead
-    of a true premarket move - a real premarket price needs the blocked
-    .info endpoint. Still useful as a "biggest movers" list, just not
-    premarket-specific outside market hours on the hosted deploy.
+    Biggest movers by % change. Price/session come from
+    _yf_prepost_price_retry (real pre/post-market ticks, see its docstring
+    for why fast_info alone can't do this). prev_close still comes from
+    fast_info (_yf_fast_info_retry) - that field is a static "last regular
+    session's close" value, which is accurate and cheap regardless of what
+    session we're currently in, so no need to duplicate that logic.
     """
     results = []
     errors = []
 
     def _one(t):
         try:
-            info, err = _yf_fast_info_retry(t)
-            if info is None:
-                return {"ticker": t, "error": err or "no data"}
-            price = getattr(info, "last_price", None)
-            prev_close = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
-            if price is None or prev_close is None or prev_close == 0:
-                return {"ticker": t, "error": "no price data"}
+            price, session, perr = _yf_prepost_price_retry(t)
+            info, ierr = _yf_fast_info_retry(t)
+            prev_close = None
+            if info is not None:
+                prev_close = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
+            if price is None:
+                return {"ticker": t, "error": perr or "no price data"}
+            if prev_close is None or prev_close == 0:
+                return {"ticker": t, "error": ierr or "no prev close data"}
             pct = (price - prev_close) / prev_close * 100
             return {
                 "ticker": t,
                 "price": round(float(price), 2),
                 "pct_change": round(float(pct), 2),
-                "session": "day",
+                "session": session,
                 "market_state": None,
                 "prev_close": round(float(prev_close), 2),
                 "error": None,
