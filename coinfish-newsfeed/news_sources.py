@@ -754,22 +754,30 @@ def build_econ_education(title, native_description=None):
 # ---------------------------------------------------------------------------
 
 def fetch_ticker_tape(tickers, max_workers=12):
+    """
+    NOTE: this used to read straight off fast_info.last_price /
+    regular_market_previous_close. Found broken 2026-07-13 in the same
+    debugging pass as Movers: fast_info.last_price freezes outside regular
+    hours, AND its previous-close fields can be stale by MULTIPLE sessions
+    (NVDA showed a previous_close two trading days old on a Monday
+    premarket) - both bugs compounding to make the top ticker tape show
+    numbers that didn't match reality. Switched to the same
+    prepost-history + daily-history combo used by fetch_premarket_movers
+    (see those functions' docstrings below for the full story).
+    """
     results = []
 
     def _one(t):
         try:
-            info = yf.Ticker(t).fast_info
-            last = getattr(info, "last_price", None)
-            # regular_market_previous_close is the actual last regular-session
-            # close (what every broker/site uses for daily % change).
-            # previous_close is a separate yfinance field that can drift from
-            # this (seen diverging by multiple points, even flipping sign
-            # pre-market) - do not prefer it.
-            prev = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
-            if last is None or prev is None or prev == 0:
-                return {"ticker": t, "price": None, "pct_change": None, "error": "no price"}
-            pct = round((last - prev) / prev * 100, 2)
-            return {"ticker": t, "price": round(float(last), 2), "pct_change": pct, "error": None}
+            price, session, perr = _yf_prepost_price_retry(t)
+            prev = None
+            cerr = None
+            if price is not None:
+                prev, cerr = _yf_prev_close_retry(t)
+            if price is None or prev is None or prev == 0:
+                return {"ticker": t, "price": None, "pct_change": None, "error": perr or cerr or "no price"}
+            pct = round((price - prev) / prev * 100, 2)
+            return {"ticker": t, "price": round(float(price), 2), "pct_change": pct, "error": None}
         except Exception as exc:
             return {"ticker": t, "price": None, "pct_change": None, "error": str(exc)}
 
@@ -1006,12 +1014,19 @@ def fetch_heatmap_data(tickers, sector_map, max_workers=4):
     close, sector, industry, company name). `sector_map` is the
     ticker->sector lookup app.py builds from WATCHLIST_SECTORS.
 
-    Uses fast_info - see _yf_fast_info_retry docstring for why (the full
-    .info call this used to use is blocked on Railway's cloud IP). Tradeoff:
-    fast_info has no company-name or industry fields, so "name" falls back
-    to the ticker symbol and "industry" falls back to "-" on the hosted
-    deploy (both are populated normally when running locally, where .info
-    still works fine).
+    Uses fast_info ONLY for market_cap/open/day_high/day_low - see
+    _yf_fast_info_retry docstring for why (the full .info call this used to
+    use is blocked on Railway's cloud IP). Tradeoff: fast_info has no
+    company-name or industry fields, so "name" falls back to the ticker
+    symbol and "industry" falls back to "-" on the hosted deploy (both are
+    populated normally when running locally, where .info still works fine).
+
+    price/pct_change do NOT come from fast_info anymore. Found 2026-07-13,
+    same debugging pass as Movers and the ticker tape: fast_info.last_price
+    freezes outside regular hours, and its previous-close fields can be
+    stale by multiple sessions - both bugs made every heatmap box's color
+    and % wrong outside market hours. Switched to the same
+    prepost-history + daily-history combo those two use.
     """
     results = []
     errors = []
@@ -1022,10 +1037,10 @@ def fetch_heatmap_data(tickers, sector_map, max_workers=4):
             if info is None:
                 return {"ticker": t, "error": err or "no data"}
             cap = getattr(info, "market_cap", None)
-            price = getattr(info, "last_price", None)
-            prev_close = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
+            price, session, perr = _yf_prepost_price_retry(t)
+            prev_close, cerr = _yf_prev_close_retry(t) if price is not None else (None, None)
             if cap is None or price is None:
-                return {"ticker": t, "error": "no market cap/price data"}
+                return {"ticker": t, "error": perr or "no market cap/price data"}
             pct = (price - prev_close) / prev_close * 100 if prev_close else 0.0
             return {
                 "ticker": t,
