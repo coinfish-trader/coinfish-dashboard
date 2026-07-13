@@ -737,6 +737,23 @@
   .econ-table-head-cols { display: grid; grid-template-columns: repeat(3, 52px); gap: 8px; flex: 0 0 auto; }
   .econ-table-head-cols span { text-align: right; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 
+  /* Events whose time has already passed today read as muted grey instead
+     of white, so the eye lands on what's still ahead. The gold divider
+     marks exactly where "already happened" ends and "still coming" begins -
+     rendered once, right above the next event due. Both computed in JS
+     (renderEcon/renderEconDayGroups) by comparing each event's date+gmt
+     against the current time. */
+  .econ-row.econ-row-past .name { color: var(--muted); }
+  .econ-row.econ-row-past .econ-stat-cell.actual { color: var(--muted); }
+  .econ-next-divider {
+    height: 2px;
+    margin: 6px 0 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-bright) 100%);
+    box-shadow: 0 0 6px 0 var(--gold-bright);
+  }
+  .econ-day-group.collapsed .econ-next-divider { display: none; }
+
   /* Master fold/unfold-everything control, only shown on the day-grouped
      This Week / Next Week views (see econTableHead). */
   .econ-collapse-all {
@@ -1839,16 +1856,66 @@ let econTodayRendered = [];
 let econWeekRendered = [];
 let econNextWeekRendered = [];
 
+// Past-event greying + "next event" gold divider: both need the list in
+// chronological order to mean anything (a "now" marker in an
+// importance-sorted list would just look random). "Today" still picks its
+// top 14 by importance first (unchanged selection logic), then re-sorts
+// just that subset chronologically for display. Week/next-week were
+// already effectively date-grouped, but sorted importance-first *within*
+// each day - re-sorted to (date, time) so each day-group also reads as a
+// clean timeline.
+function chronoSort(list) {
+  return [...list].sort((a, b) => {
+    const dc = (a.date || "").localeCompare(b.date || "");
+    if (dc !== 0) return dc;
+    return (a.gmt || "").localeCompare(b.gmt || "");
+  });
+}
+
+// "today" events carry only a gmt time (no date field - see
+// fetch_nasdaq_economic_events docstring), so they're implicitly today's
+// date. week/nextweek events carry their own "date" (YYYY-MM-DD).
+function econEventDate(e, scope) {
+  const [h, m] = (e.gmt || "00:00").split(":").map(n => parseInt(n, 10) || 0);
+  if (scope === "today") {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
+  }
+  const [y, mo, d] = (e.date || "").split("-").map(Number);
+  if (!y) return new Date(NaN);
+  return new Date(y, mo - 1, d, h, m);
+}
+
+// Index of the first event whose time hasn't happened yet, or -1 if every
+// event in the list is already in the past.
+function nextEconIndex(list, scope) {
+  const now = new Date();
+  for (let i = 0; i < list.length; i++) {
+    const d = econEventDate(list[i], scope);
+    if (!isNaN(d) && d >= now) return i;
+  }
+  return -1;
+}
+
+function econRowClassesAndDivider(nextIdx, i) {
+  const isPast = nextIdx === -1 || i < nextIdx;
+  const divider = i === nextIdx ? '<div class="econ-next-divider"></div>' : '';
+  return { pastClass: isPast ? ' econ-row-past' : '', divider };
+}
+
 function renderEcon() {
   const econEl = document.getElementById("econList");
   const impactRank = { High: 0, Medium: 1, Low: 2 };
   if (econScope === "today") {
-    const sorted = [...econToday].sort((a, b) => (impactRank[a.importance] ?? 2) - (impactRank[b.importance] ?? 2));
-    econTodayRendered = sorted.slice(0, 14);
+    const byImportance = [...econToday].sort((a, b) => (impactRank[a.importance] ?? 2) - (impactRank[b.importance] ?? 2));
+    econTodayRendered = chronoSort(byImportance.slice(0, 14));
+    const nextIdx = nextEconIndex(econTodayRendered, "today");
     econEl.innerHTML = econTodayRendered.length ? econTableHead("today") + econTodayRendered.map((e, i) => {
       const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+      const { pastClass, divider } = econRowClassesAndDivider(nextIdx, i);
       return `
-      <div class="cal-row econ-row" data-scope="today" data-idx="${i}">
+      ${divider}
+      <div class="cal-row econ-row${pastClass}" data-scope="today" data-idx="${i}">
         <div class="econ-row-left">
           <span class="name"><span class="impact-dot ${esc((e.importance || 'low').toLowerCase())}"></span>${countryFlag(e.country)} ${esc(e.eventName)}</span>
           <span class="meta">${esc(e.gmt)}</span>
@@ -1863,12 +1930,12 @@ function renderEcon() {
     // was silently cutting off Thursday/Friday once earlier days used up
     // the budget. Collapsible day-groups keep it visually manageable
     // instead, so show every event that came back from the backend.
-    econWeekRendered = econWeekList;
+    econWeekRendered = chronoSort(econWeekList);
     econEl.innerHTML = econWeekRendered.length ? econTableHead("week") + renderEconDayGroups(econWeekRendered, "week")
       : '<div class="empty">No events found this week.</div>';
     syncCollapseAllLabel("week");
   } else {
-    econNextWeekRendered = econNextWeekList;
+    econNextWeekRendered = chronoSort(econNextWeekList);
     econEl.innerHTML = econNextWeekRendered.length ? econTableHead("nextweek") + renderEconDayGroups(econNextWeekRendered, "nextweek")
       : '<div class="empty">No events found for next week.</div>';
     syncCollapseAllLabel("nextweek");
@@ -1882,6 +1949,7 @@ function renderEcon() {
 // the date (now conveyed by the header above it) and shows just the time.
 function renderEconDayGroups(list, scope) {
   const dayState = getEconDayState();
+  const nextIdx = nextEconIndex(list, scope);
   let html = "";
   let lastDate = null;
   let groupOpen = false;
@@ -1896,8 +1964,10 @@ function renderEconDayGroups(list, scope) {
       groupOpen = true;
     }
     const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+    const { pastClass, divider } = econRowClassesAndDivider(nextIdx, i);
     html += `
-      <div class="cal-row econ-row" data-scope="${scope}" data-idx="${i}">
+      ${divider}
+      <div class="cal-row econ-row${pastClass}" data-scope="${scope}" data-idx="${i}">
         <div class="econ-row-left">
           <span class="name"><span class="impact-dot ${esc((e.importance || 'low').toLowerCase())}"></span>${countryFlag(e.country)} ${esc(e.eventName)}</span>
           <span class="meta">${esc(e.gmt)}</span>
