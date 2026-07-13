@@ -1328,7 +1328,7 @@ function tickerLogoHTML(ticker, size) {
 }
 
 async function getJSON(path) {
-  const res = await fetch(API + path);
+  const res = await fetch(API + path, { cache: "no-store" });
   if (!res.ok) throw new Error(path + " -> " + res.status);
   return res.json();
 }

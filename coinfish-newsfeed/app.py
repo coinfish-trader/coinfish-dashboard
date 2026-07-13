@@ -3,7 +3,7 @@ import time
 import threading
 from datetime import datetime, timedelta
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 import news_sources as ns
@@ -115,6 +115,19 @@ def _cached(key, ttl, builder):
         data = builder()
         _cache[key] = {"data": data, "ts": time.time()}
         return data, _cache[key]["ts"]
+
+
+@app.after_request
+def _no_store_api(resp):
+    # Flask sets no Cache-Control by default, which leaves browsers free to
+    # apply heuristic caching to GET responses (including fetch() calls) -
+    # added after Billy reported the live site showing stale Movers data
+    # while the raw endpoint (hit fresh via direct navigation) was already
+    # returning updated numbers. Force every /api/* response to be
+    # refetched every time, never served from the browser's HTTP cache.
+    if request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 
 @app.route("/")
