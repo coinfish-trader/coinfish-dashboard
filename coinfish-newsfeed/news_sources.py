@@ -875,14 +875,50 @@ def _yf_prepost_price_retry(ticker, retries=2, base_delay=0.6):
     return None, None, last_exc
 
 
+def _yf_prev_close_retry(ticker, retries=2, base_delay=0.6):
+    """
+    Previous REGULAR-session close via daily-interval history - NOT
+    fast_info.previous_close / regular_market_previous_close.
+
+    Found 2026-07-13, same day as the last_price bug: on Monday premarket,
+    fast_info.regular_market_previous_close for NVDA returned $202.78 -
+    Wednesday's close, TWO sessions stale - while the real previous close
+    (Friday's) was $210.96. fast_info.previous_close returned yet another,
+    also-wrong number ($210.57). Every %-change in Movers was computed off
+    this bad baseline, which is why the panel looked "wrong"/frozen even
+    though price and session were already fixed and genuinely live.
+
+    Daily-interval bars don't have this problem: Yahoo only writes a daily
+    bar once that session is fully closed, so during premarket the last row
+    is always the correct, most-recently-completed close - no separate
+    "current vs previous" field to get confused about.
+    """
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            daily = yf.Ticker(ticker).history(period="5d", interval="1d")
+            if daily is not None and not daily.empty:
+                close = daily["Close"].iloc[-1]
+                if close is None or (isinstance(close, float) and close != close):  # NaN check
+                    last_exc = "empty last daily bar"
+                else:
+                    return float(close), None
+            else:
+                last_exc = "empty daily history"
+        except Exception as exc:
+            last_exc = str(exc)
+        time.sleep(base_delay * (attempt + 1))
+    return None, last_exc
+
+
 def fetch_premarket_movers(tickers, max_workers=4, top_n=10):
     """
     Biggest movers by % change. Price/session come from
-    _yf_prepost_price_retry (real pre/post-market ticks, see its docstring
-    for why fast_info alone can't do this). prev_close still comes from
-    fast_info (_yf_fast_info_retry) - that field is a static "last regular
-    session's close" value, which is accurate and cheap regardless of what
-    session we're currently in, so no need to duplicate that logic.
+    _yf_prepost_price_retry (real pre/post-market ticks). prev_close comes
+    from _yf_prev_close_retry (daily bars) - NOT fast_info, whose
+    previous-close fields were found stale by up to 2 sessions (see that
+    function's docstring). Both sources needed per ticker; fast_info is no
+    longer used anywhere in this function.
     """
     results = []
     errors = []
@@ -890,14 +926,11 @@ def fetch_premarket_movers(tickers, max_workers=4, top_n=10):
     def _one(t):
         try:
             price, session, perr = _yf_prepost_price_retry(t)
-            info, ierr = _yf_fast_info_retry(t)
-            prev_close = None
-            if info is not None:
-                prev_close = getattr(info, "regular_market_previous_close", None) or getattr(info, "previous_close", None)
+            prev_close, cerr = _yf_prev_close_retry(t)
             if price is None:
                 return {"ticker": t, "error": perr or "no price data"}
             if prev_close is None or prev_close == 0:
-                return {"ticker": t, "error": ierr or "no prev close data"}
+                return {"ticker": t, "error": cerr or "no prev close data"}
             pct = (price - prev_close) / prev_close * 100
             return {
                 "ticker": t,
