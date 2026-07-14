@@ -1289,6 +1289,150 @@ def fetch_treasury_yields():
 
 
 # ---------------------------------------------------------------------------
+# BLS direct-API fallback for CPI actuals (added 2026-07-14).
+#
+# Bug: Nasdaq's economicevents feed (used for the whole econ calendar) can
+# sit with actual="&nbsp;" on CPI rows for hours after the real number is
+# out and being reported everywhere - confirmed live on 2026-07-14: Nasdaq's
+# US CPI rows were still blank ~30 min after the 8:30am ET release while
+# BLS's own public API already had the new datapoint. This isn't a caching
+# problem on our end (lowering CACHE_TTL["calendar"] doesn't help if the
+# upstream source itself hasn't populated the field) - it's Nasdaq's own
+# backfill lag.
+#
+# Fix: BLS publishes the raw index series via a free, no-key-required public
+# API (api.bls.gov/publicAPI/v1) that updates the instant they release -
+# no lag, because we're reading the same series the index level itself
+# comes from, not waiting on a third party to copy the number into a
+# calendar feed. We compute MoM/YoY % ourselves from the two most recent
+# datapoints and use that to patch Nasdaq's blank CPI actual fields.
+#
+# Series used (all "CPI-U, US city average"):
+#   CUUR0000SA0     - All items, NSA   -> CPI (YoY) convention
+#   CUSR0000SA0     - All items, SA    -> CPI (MoM) convention
+#   CUUR0000SA0L1E  - Core (ex food/energy), NSA -> Core CPI (YoY)
+#   CUSR0000SA0L1E  - Core (ex food/energy), SA  -> Core CPI (MoM)
+# (Matches standard convention: headline/core MoM is reported seasonally
+# adjusted, YoY is reported not-seasonally-adjusted - confirmed by
+# reproducing publicly-reported June 2026 figures from this same data:
+# CPI MoM -0.4%, CPI YoY +3.5%, Core CPI MoM ~0.0%, Core CPI YoY +2.6%.)
+#
+# Unregistered BLS API calls are rate-limited to 25/day/IP, so this is NOT
+# called on every /api/calendar build - app.py caches it separately
+# (CACHE_TTL["bls_cpi"], ~15 min) so it can't blow through that limit.
+# Returns None on any failure so the caller just leaves Nasdaq's (possibly
+# blank) actual untouched rather than breaking the calendar endpoint.
+# ---------------------------------------------------------------------------
+
+_BLS_CPI_SERIES = {
+    "cpi_yoy": "CUUR0000SA0",
+    "cpi_mom": "CUSR0000SA0",
+    "core_cpi_yoy": "CUUR0000SA0L1E",
+    "core_cpi_mom": "CUSR0000SA0L1E",
+}
+
+
+def _bls_series_latest_and_prior(series_id, want_yoy):
+    """
+    Fetches one BLS series and returns (pct_change, period_label) using the
+    latest datapoint vs. either the prior month (MoM) or the same month a
+    year earlier (YoY). Returns (None, None) if the series doesn't have
+    enough history or the request fails.
+    """
+    resp = requests.get(
+        f"https://api.bls.gov/publicAPI/v1/timeseries/data/{series_id}",
+        timeout=8,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    series = payload.get("Results", {}).get("series", [])
+    if not series:
+        return None, None
+    rows = series[0].get("data", [])
+    # BLS returns newest-first with year/period ("M01".."M12") fields.
+    rows = [r for r in rows if r.get("period", "").startswith("M") and r.get("value") not in (None, "-")]
+    if not rows:
+        return None, None
+    latest = rows[0]
+    latest_val = float(latest["value"])
+    latest_year, latest_period = latest["year"], latest["period"]
+    period_label = f"{latest.get('periodName', '')} {latest_year}"
+
+    if want_yoy:
+        target_year = str(int(latest_year) - 1)
+        prior = next((r for r in rows if r["year"] == target_year and r["period"] == latest_period), None)
+    else:
+        # Prior calendar month - rows are in chronological-descending order
+        # so it's simply the next row, unless that row is a non-monthly
+        # "Annual" summary row (already filtered out above).
+        prior = rows[1] if len(rows) > 1 else None
+
+    if prior is None:
+        return None, period_label
+    prior_val = float(prior["value"])
+    if prior_val == 0:
+        return None, period_label
+    pct = (latest_val - prior_val) / prior_val * 100
+    return pct, period_label
+
+
+def fetch_bls_cpi_actuals():
+    """
+    Returns {"cpi_mom": "-0.4%", "cpi_yoy": "+3.5%", "core_cpi_mom": "0.0%",
+    "core_cpi_yoy": "+2.6%", "period": "June 2026"} computed directly from
+    BLS's public API, or None if anything fails (network, rate limit,
+    unexpected shape) - callers must treat None as "no fallback available"
+    and leave Nasdaq's value as-is.
+    """
+    try:
+        out = {}
+        period_label = None
+        for key, series_id in _BLS_CPI_SERIES.items():
+            want_yoy = key.endswith("_yoy")
+            pct, period_label = _bls_series_latest_and_prior(series_id, want_yoy)
+            if pct is None:
+                return None
+            rounded = round(pct, 1)
+            if rounded == 0:
+                rounded = 0.0  # avoid "-0.0%" from tiny negative values rounding to zero
+            out[key] = f"{rounded:+.1f}%"
+        out["period"] = period_label
+        return out
+    except Exception:
+        return None
+
+
+def patch_cpi_actuals_with_bls(rows, bls_data):
+    """
+    Mutates United States CPI/Core CPI (MoM)/(YoY) rows in-place, filling in
+    the actual field from BLS's directly-computed figures (see
+    fetch_bls_cpi_actuals docstring) wherever Nasdaq's actual is still blank.
+    Only touches the exact 4 headline rows produced by tag_cpi_period() -
+    the index-level variants (CPI Index, n.s.a., etc.) are left alone since
+    we don't compute raw index levels here, just % changes.
+    """
+    if not bls_data:
+        return rows
+    field_for_title = {
+        "CPI (MoM)": "cpi_mom",
+        "CPI (YoY)": "cpi_yoy",
+        "Core CPI (MoM)": "core_cpi_mom",
+        "Core CPI (YoY)": "core_cpi_yoy",
+    }
+    for row in rows:
+        if row.get("country") != "United States":
+            continue
+        field = field_for_title.get((row.get("eventName") or "").strip())
+        if not field:
+            continue
+        current = (row.get("actual") or "").strip()
+        if current in ("", "&nbsp;"):
+            row["actual"] = bls_data[field]
+            row["actual_source"] = "bls"
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # FOMC meeting schedule - hardcoded from federalreserve.gov/monetarypolicy/
 # fomccalendars.htm (published a year in advance, doesn't move). Update this
 # list every December/January when the Fed posts next year's dates.

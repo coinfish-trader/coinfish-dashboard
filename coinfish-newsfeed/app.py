@@ -94,6 +94,7 @@ CACHE_TTL = {
     "movers": 60,
     "marketcap": 300,    # market cap barely moves intraday, longer TTL than movers
     "heatmap": 120,
+    "bls_cpi": 900,       # separate from "calendar" - BLS unregistered API is rate-limited to 25 req/day
 }
 
 _cache = {}
@@ -106,6 +107,7 @@ _locks = {
     "movers": threading.Lock(),
     "marketcap": threading.Lock(),
     "heatmap": threading.Lock(),
+    "bls_cpi": threading.Lock(),
 }
 
 
@@ -284,6 +286,17 @@ def calendar():
         econ_week, week_err = ns.fetch_econ_this_week(ECON_COUNTRIES_NASDAQ)
         if week_err:
             errors.append(week_err)
+
+        # Nasdaq's actual field can lag the real release by hours (see
+        # fetch_bls_cpi_actuals docstring in news_sources.py - found
+        # 2026-07-14 when CPI was already out and reported everywhere but
+        # Nasdaq's feed still showed blank). Patch CPI/Core CPI rows from
+        # BLS's own public API, which has no such lag. Cached separately
+        # from "calendar" (CACHE_TTL["bls_cpi"]) to respect BLS's
+        # unregistered rate limit of 25 req/day.
+        bls_cpi, _ = _cached("bls_cpi", CACHE_TTL["bls_cpi"], ns.fetch_bls_cpi_actuals)
+        ns.patch_cpi_actuals_with_bls(econ, bls_cpi)
+        ns.patch_cpi_actuals_with_bls(econ_week, bls_cpi)
 
         econ_next_week, next_week_err = ns.fetch_econ_next_week(ECON_COUNTRIES_NASDAQ)
         if next_week_err:
