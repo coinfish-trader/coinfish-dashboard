@@ -12,14 +12,20 @@ import news_sources as ns
 # ETFs. Kept as a plain list here (not imported from scanner.py) so this
 # tool doesn't drag in pandas/numpy/bs4/curl_cffi just for a name list.
 # Edit this list directly if the watchlist changes.
+#
+# Synced 2026-07-14 to the current 56-name watchlist (was still running the
+# pre-2026-06-23 version - the newsfeed never got that revamp when
+# backend/scanner.py and coinfish-playbook.html did). Billy caught the drift.
+# Changes vs. the old list: added AVGO, V, MA, ISRG, ETN, PH; removed PFE,
+# BMY, HAL, MMM, UPS (cut in the 2026-06-23 revamp, see coinfish-hq/memory.md).
 WATCHLIST = [
     "SPY", "QQQ", "IWM",
-    "NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META",
-    "BAC", "WFC", "C", "JPM", "MS", "SCHW", "COF", "AXP", "GS",
-    "XOM", "SLB", "CVX", "OXY", "COP", "EOG", "VLO", "MPC",
-    "PFE", "MRK", "JNJ", "BMY", "ABBV", "LLY", "TMO", "AMGN",
-    "WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD",
-    "HAL", "HON", "BA", "MMM", "RTX", "UPS", "GE", "CAT", "DE", "UNP", "LMT",
+    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA",
+    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA",
+    "XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO",
+    "LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG",
+    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT",
+    "RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP",
 ]
 
 # Sector grouping for the watchlist heatmap - mirrors the block structure
@@ -29,12 +35,12 @@ WATCHLIST = [
 # deliberately excluded - they're index ETFs, not single-sector companies,
 # and don't carry a real market cap/sector the way an equity does.
 WATCHLIST_SECTORS = {
-    "Technology": ["NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META"],
-    "Financials": ["BAC", "WFC", "C", "JPM", "MS", "SCHW", "COF", "AXP", "GS"],
-    "Energy": ["XOM", "SLB", "CVX", "OXY", "COP", "EOG", "VLO", "MPC"],
-    "Healthcare": ["PFE", "MRK", "JNJ", "BMY", "ABBV", "LLY", "TMO", "AMGN"],
-    "Consumer": ["WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD"],
-    "Industrials": ["HAL", "HON", "BA", "MMM", "RTX", "UPS", "GE", "CAT", "DE", "UNP", "LMT"],
+    "Technology": ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA"],
+    "Financials": ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA"],
+    "Energy": ["XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO"],
+    "Healthcare": ["LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG"],
+    "Consumer": ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT"],
+    "Industrials": ["RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP"],
 }
 TICKER_TO_SECTOR = {t: sector for sector, tickers in WATCHLIST_SECTORS.items() for t in tickers}
 
