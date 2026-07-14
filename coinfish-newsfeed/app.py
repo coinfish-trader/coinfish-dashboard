@@ -88,7 +88,7 @@ ECON_COUNTRIES_NASDAQ = {"United States", "Canada", "China"}
 CACHE_TTL = {
     "news": 90,          # seconds
     "filings": 60,
-    "calendar": 900,
+    "calendar": 60,      # short TTL so actuals (e.g. CPI) show up fast after release
     "tape": 30,
     "macro": 120,
     "movers": 60,
