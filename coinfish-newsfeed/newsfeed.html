@@ -2075,7 +2075,7 @@ function renderMovers() {
     const sign = up ? "+" : "";
     const logoUrl = `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(m.ticker)}.png`;
     const initials = m.ticker.replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase();
-    const tag = m.session === "premarket" ? "PRE" : m.session === "afterhours" ? "AH" : "DAY";
+    const tag = m.session === "premarket" ? "PRE" : m.session === "afterhours" ? "AH" : m.session === "closed" ? "CLOSED" : "DAY";
     const price = m.price != null ? "$" + m.price.toFixed(2) : "-";
     return `
       <div class="mover-row">

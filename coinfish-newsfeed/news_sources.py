@@ -22,6 +22,7 @@ import time
 import difflib
 import xml.etree.ElementTree as ET
 from datetime import datetime as _dt, timedelta as _timedelta
+from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -770,10 +771,15 @@ def fetch_ticker_tape(tickers, max_workers=12):
     def _one(t):
         try:
             price, session, perr = _yf_prepost_price_retry(t)
-            prev = None
-            cerr = None
-            if price is not None:
-                prev, cerr = _yf_prev_close_retry(t)
+            if session == "closed":
+                # Overnight dead zone / weekend - no live tick exists at
+                # all, fall back to today's close vs yesterday's.
+                price, prev, cerr = _yf_daily_close_pair_retry(t)
+            else:
+                prev = None
+                cerr = None
+                if price is not None:
+                    prev, cerr = _yf_prev_close_retry(t)
             if price is None or prev is None or prev == 0:
                 return {"ticker": t, "price": None, "pct_change": None, "error": perr or cerr or "no price"}
             pct = round((price - prev) / prev * 100, 2)
@@ -836,6 +842,13 @@ def _yf_fast_info_retry(ticker, retries=3, base_delay=0.6):
 # history() index comes back tz-localized to for US tickers).
 _MARKET_OPEN_ET = _dt.strptime("09:30", "%H:%M").time()
 _MARKET_CLOSE_ET = _dt.strptime("16:00", "%H:%M").time()
+# Yahoo's pre/post-market minute data only exists inside a fixed daily
+# window - roughly premarket open (4:00am ET) through the end of the
+# official afterhours session (8:00pm ET). Outside that window (the
+# overnight "dead zone", ~8pm to ~4am) there are no new minute bars at all.
+_EXTENDED_START_ET = _dt.strptime("04:00", "%H:%M").time()
+_EXTENDED_END_ET = _dt.strptime("20:00", "%H:%M").time()
+_ET_ZONE = ZoneInfo("America/New_York")
 
 
 def _yf_prepost_price_retry(ticker, retries=2, base_delay=0.6):
@@ -853,10 +866,28 @@ def _yf_prepost_price_retry(ticker, retries=2, base_delay=0.6):
     all, it's not a caching or staleness bug, it's a field the endpoint
     doesn't carry. history(prepost=True) does.
 
-    Returns (price, session, error) where session is one of
-    "premarket" / "regular" / "afterhours" based on the last bar's local
-    time, or (None, None, err) on failure.
+    Extended 2026-07-14: found a second, related bug the same way - checked
+    at ~10:20pm ET and every ticker's "last bar" was actually timestamped
+    ~8:00pm, over two hours stale, because Yahoo simply stops writing
+    minute bars once the official afterhours session ends. The old code
+    took whatever the last available bar was and called it live regardless
+    of how old it actually was, still labeling it "afterhours." Same root
+    disease as the fast_info bug (a frozen value mistaken for a live one),
+    different clock window. Fix: check the actual current wall-clock time
+    in ET FIRST: if it falls in the overnight dead zone
+    (_EXTENDED_END_ET to _EXTENDED_START_ET next day), skip the minute-bar
+    fetch entirely and return session="closed" - callers fall back to
+    plain daily-close pricing instead (see _yf_daily_close_pair_retry).
+
+    Returns (price, session, error). session is one of "premarket" /
+    "regular" / "afterhours" / "closed". When session == "closed", price is
+    always None (there's nothing live to report) and error is always None
+    (this isn't a failure, it's an expected state overnight/on weekends).
     """
+    now_et = _dt.now(_ET_ZONE).time()
+    if not (_EXTENDED_START_ET <= now_et < _EXTENDED_END_ET):
+        return None, "closed", None
+
     last_exc = None
     for attempt in range(retries):
         try:
@@ -877,6 +908,35 @@ def _yf_prepost_price_retry(ticker, retries=2, base_delay=0.6):
                     return float(price), session, None
             else:
                 last_exc = "empty history"
+        except Exception as exc:
+            last_exc = str(exc)
+        time.sleep(base_delay * (attempt + 1))
+    return None, None, last_exc
+
+
+def _yf_daily_close_pair_retry(ticker, retries=2, base_delay=0.6):
+    """
+    Today's close + the close before it, both from daily bars - used only
+    when _yf_prepost_price_retry reports session="closed" (the overnight
+    dead zone, ~8pm-4am ET, or a weekend). There's no live intraday tick to
+    show at all in that window, so instead of a stale afterhours print this
+    shows the regular session's actual performance: today's close vs
+    yesterday's, which is what most brokers/sites default to once the
+    trading day is fully done and extended hours have ended too.
+    """
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            daily = yf.Ticker(ticker).history(period="5d", interval="1d")
+            if daily is not None and len(daily) >= 2:
+                today_close = daily["Close"].iloc[-1]
+                prior_close = daily["Close"].iloc[-2]
+                if any(isinstance(v, float) and v != v for v in (today_close, prior_close)):  # NaN check
+                    last_exc = "empty daily bar"
+                else:
+                    return float(today_close), float(prior_close), None
+            else:
+                last_exc = "not enough daily history"
         except Exception as exc:
             last_exc = str(exc)
         time.sleep(base_delay * (attempt + 1))
@@ -927,6 +987,11 @@ def fetch_premarket_movers(tickers, max_workers=4, top_n=10):
     previous-close fields were found stale by up to 2 sessions (see that
     function's docstring). Both sources needed per ticker; fast_info is no
     longer used anywhere in this function.
+
+    Outside the extended-hours window entirely (session == "closed", see
+    _yf_prepost_price_retry) there's no live tick to show at all, so this
+    falls back to _yf_daily_close_pair_retry - today's close vs
+    yesterday's, i.e. the regular session's actual performance.
     """
     results = []
     errors = []
@@ -934,9 +999,12 @@ def fetch_premarket_movers(tickers, max_workers=4, top_n=10):
     def _one(t):
         try:
             price, session, perr = _yf_prepost_price_retry(t)
-            prev_close, cerr = _yf_prev_close_retry(t)
+            if session == "closed":
+                price, prev_close, cerr = _yf_daily_close_pair_retry(t)
+            else:
+                prev_close, cerr = (None, None) if price is None else _yf_prev_close_retry(t)
             if price is None:
-                return {"ticker": t, "error": perr or "no price data"}
+                return {"ticker": t, "error": perr or cerr or "no price data"}
             if prev_close is None or prev_close == 0:
                 return {"ticker": t, "error": cerr or "no prev close data"}
             pct = (price - prev_close) / prev_close * 100
@@ -1038,9 +1106,12 @@ def fetch_heatmap_data(tickers, sector_map, max_workers=4):
                 return {"ticker": t, "error": err or "no data"}
             cap = getattr(info, "market_cap", None)
             price, session, perr = _yf_prepost_price_retry(t)
-            prev_close, cerr = _yf_prev_close_retry(t) if price is not None else (None, None)
+            if session == "closed":
+                price, prev_close, cerr = _yf_daily_close_pair_retry(t)
+            else:
+                prev_close, cerr = _yf_prev_close_retry(t) if price is not None else (None, None)
             if cap is None or price is None:
-                return {"ticker": t, "error": perr or "no market cap/price data"}
+                return {"ticker": t, "error": perr or cerr or "no market cap/price data"}
             pct = (price - prev_close) / prev_close * 100 if prev_close else 0.0
             return {
                 "ticker": t,
