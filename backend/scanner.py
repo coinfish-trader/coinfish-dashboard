@@ -17,52 +17,40 @@ except ImportError:
     HAS_CURL_CFFI = False
 
 WATCHLIST = [
-    # Technology (11)
-    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA",
-    # Financials (11)
-    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA",
-    # Energy (8)
-    "XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO",
-    # Healthcare (7)
-    "LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG",
-    # Consumer (9)
-    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT",
-    # Industrials / Defense / Transportation (10)
-    "RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP",
+    "NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META", "AVGO", "CRM", "MU",
+    "BAC", "WFC", "C", "JPM", "MS", "SCHW", "AXP", "GS", "V", "MA", "PYPL",
+    "XOM", "CVX", "OXY", "COP",
+    "LLY", "ABBV", "JNJ", "MRK",
+    "WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD", "GM", "ABNB",
+    "BA", "GE", "UBER", "HON", "CAT",
 ]
 
 COMPANY_NAMES = {
     "NVDA": "NVIDIA Corp", "TSLA": "Tesla Inc", "AAPL": "Apple Inc",
     "AMD": "Advanced Micro Devices", "AMZN": "Amazon.com", "GOOGL": "Alphabet Inc",
     "NFLX": "Netflix Inc", "MSFT": "Microsoft Corp", "ORCL": "Oracle Corp",
-    "META": "Meta Platforms", "BAC": "Bank of America", "WFC": "Wells Fargo",
-    "C": "Citigroup Inc", "JPM": "JPMorgan Chase", "MS": "Morgan Stanley",
-    "SCHW": "Charles Schwab", "COF": "Capital One", "AXP": "American Express",
-    "GS": "Goldman Sachs", "XOM": "ExxonMobil", "SLB": "SLB (Schlumberger)",
-    "CVX": "Chevron Corp", "OXY": "Occidental Petroleum", "COP": "ConocoPhillips",
-    "EOG": "EOG Resources", "VLO": "Valero Energy", "MPC": "Marathon Petroleum",
-    "PFE": "Pfizer Inc", "MRK": "Merck & Co", "JNJ": "Johnson & Johnson",
-    "UNH": "UnitedHealth Group",
-    "BMY": "Bristol-Myers Squibb", "ABBV": "AbbVie Inc", "LLY": "Eli Lilly",
-    "TMO": "Thermo Fisher Scientific", "AMGN": "Amgen Inc", "WMT": "Walmart Inc",
+    "META": "Meta Platforms", "AVGO": "Broadcom Inc", "CRM": "Salesforce Inc",
+    "MU": "Micron Technology", "BAC": "Bank of America",
+    "WFC": "Wells Fargo", "C": "Citigroup Inc", "JPM": "JPMorgan Chase",
+    "MS": "Morgan Stanley", "SCHW": "Charles Schwab", "AXP": "American Express",
+    "GS": "Goldman Sachs", "V": "Visa Inc", "MA": "Mastercard Inc", "PYPL": "PayPal Holdings",
+    "XOM": "ExxonMobil", "CVX": "Chevron Corp", "OXY": "Occidental Petroleum",
+    "COP": "ConocoPhillips", "LLY": "Eli Lilly", "ABBV": "AbbVie Inc",
+    "JNJ": "Johnson & Johnson", "MRK": "Merck & Co", "WMT": "Walmart Inc",
     "NKE": "Nike Inc", "DIS": "Walt Disney Co", "SBUX": "Starbucks Corp",
     "HD": "Home Depot", "TGT": "Target Corp", "LOW": "Lowe's Companies",
-    "COST": "Costco Wholesale", "MCD": "McDonald's Corp", "HAL": "Halliburton",
-    "HON": "Honeywell International", "BA": "Boeing Co", "MMM": "3M Company",
-    "RTX": "RTX Corporation", "UPS": "United Parcel Service", "GE": "GE Aerospace",
-    "CAT": "Caterpillar Inc", "DE": "Deere & Company", "UNP": "Union Pacific",
-    "LMT": "Lockheed Martin",
-    "AVGO": "Broadcom Inc", "V": "Visa Inc", "ISRG": "Intuitive Surgical",
-    "MA": "Mastercard Inc", "ETN": "Eaton Corp", "PH": "Parker-Hannifin",
+    "COST": "Costco Wholesale", "MCD": "McDonald's Corp", "GM": "General Motors",
+    "ABNB": "Airbnb Inc", "BA": "Boeing Co", "GE": "GE Aerospace", "UBER": "Uber Technologies",
+    "HON": "Honeywell International", "CAT": "Caterpillar Inc",
 }
 
 SECTORS = {
-    "Tech":        ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA"],
-    "Financials":  ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA"],
-    "Energy":      ["XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO"],
-    "Healthcare":  ["LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG"],
-    "Consumer":    ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT"],
-    "Industrials": ["RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP"],
+    "Tech":        ["NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META", "AVGO", "CRM", "MU"],
+    "Financials":  ["BAC", "WFC", "C", "JPM", "MS", "SCHW", "AXP", "GS", "V", "MA", "PYPL"],
+    "Energy":      ["XOM", "CVX", "OXY", "COP"],
+    "Healthcare":  ["LLY", "ABBV", "JNJ", "MRK"],
+    "Consumer":    ["WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD", "GM", "ABNB"],
+    "Industrials": ["BA", "GE", "UBER", "HON", "CAT"],
 }
 
 def _sector(ticker):
