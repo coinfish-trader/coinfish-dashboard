@@ -13,19 +13,29 @@ import news_sources as ns
 # tool doesn't drag in pandas/numpy/bs4/curl_cffi just for a name list.
 # Edit this list directly if the watchlist changes.
 #
-# Synced 2026-07-14 to the current 56-name watchlist (was still running the
-# pre-2026-06-23 version - the newsfeed never got that revamp when
-# backend/scanner.py and coinfish-playbook.html did). Billy caught the drift.
-# Changes vs. the old list: added AVGO, V, MA, ISRG, ETN, PH; removed PFE,
-# BMY, HAL, MMM, UPS (cut in the 2026-06-23 revamp, see coinfish-hq/memory.md).
+# Revamped 2026-07-31: liquidity/spread cleanup. Billy flagged that a chunk
+# of the 56-name sector list traded thin, wide-spread options - fine for
+# stock liquidity, bad for actually working credit spread/condor fills.
+# Cut 16 names: COF, SLB, MPC, VLO, EOG, AMGN, TMO, ISRG, RTX, HON, CAT, DE,
+# UNP, LMT, ETN, PH. Down to 40 names + SPY/QQQ/IWM (43 total). See
+# coinfish-hq/memory.md for the full liquidity tiering behind this cut.
+#
+# Same-day follow-up: added 5 names from a broader top-50-liquid-options scan
+# (CRM, UBER, PYPL, GM, MU) - all deep liquidity plus well-behaved (no
+# meme/gap-prone history), unlike some other liquid names considered and
+# rejected (PLTR, COIN, SMCI, APP - liquid but real gap/event risk; see
+# memory.md). Then added ABNB same day too (reasonably tame mega-cap, more
+# consumer/travel exposure) - DKNG, RBLX, MRVL considered and left off
+# (regulatory/controversy/customer-concentration gap risk). Now 46 names +
+# SPY/QQQ/IWM (49 total).
 WATCHLIST = [
     "SPY", "QQQ", "IWM",
-    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA",
-    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA",
-    "XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO",
-    "LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG",
-    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT",
-    "RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP",
+    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA", "CRM", "MU",
+    "JPM", "BAC", "GS", "AXP", "SCHW", "MS", "WFC", "C", "V", "MA", "PYPL",
+    "XOM", "CVX", "COP", "OXY",
+    "LLY", "ABBV", "JNJ", "MRK",
+    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT", "GM", "ABNB",
+    "BA", "GE", "UBER", "HON", "CAT",
 ]
 
 # Sector grouping for the watchlist heatmap - mirrors the block structure
@@ -35,17 +45,17 @@ WATCHLIST = [
 # deliberately excluded - they're index ETFs, not single-sector companies,
 # and don't carry a real market cap/sector the way an equity does.
 WATCHLIST_SECTORS = {
-    "Technology": ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA"],
-    "Financials": ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA"],
-    "Energy": ["XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO"],
-    "Healthcare": ["LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG"],
-    "Consumer": ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT"],
-    "Industrials": ["RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP"],
+    "Technology": ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA", "CRM", "MU"],
+    "Financials": ["JPM", "BAC", "GS", "AXP", "SCHW", "MS", "WFC", "C", "V", "MA", "PYPL"],
+    "Energy": ["XOM", "CVX", "COP", "OXY"],
+    "Healthcare": ["LLY", "ABBV", "JNJ", "MRK"],
+    "Consumer": ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT", "GM", "ABNB"],
+    "Industrials": ["BA", "GE", "UBER", "HON", "CAT"],
 }
 TICKER_TO_SECTOR = {t: sector for sector, tickers in WATCHLIST_SECTORS.items() for t in tickers}
 
 # Broader universe for the "Top 10 by Market Cap" widget - Billy wants the
-# ACTUAL top 10 largest companies, not just the top 10 of his 58-name
+# ACTUAL top 10 largest companies, not just the top 10 of his 51-name
 # trading watchlist (WATCHLIST above is scoped to what he actually trades;
 # this is scoped to "what's actually huge" and is a separate, wider list).
 # No paid screener API here, so this is a static candidate list of every
