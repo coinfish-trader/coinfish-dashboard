@@ -736,7 +736,16 @@
   .econ-stats-row { display: grid; grid-template-columns: repeat(3, 52px); gap: 8px; flex: 0 0 auto; }
   .econ-stat-cell { text-align: right; font-family: 'Inter', sans-serif; font-size: 0.74rem; font-weight: 700; color: var(--off-white); white-space: nowrap; }
   .econ-stat-cell.empty { color: var(--muted); opacity: 0.4; }
-  .econ-stat-cell.actual { color: var(--blue-bright); }
+  /* Actual defaults to off-white (in-line with forecast, or no forecast to
+     compare against). .hot/.cold added in JS (see econSurpriseClass) when
+     actual is numerically parseable and differs from forecast - hot = came
+     in above consensus, cold = came in below. Deliberately NOT tied to
+     "good"/"bad" for markets (that flips per indicator - e.g. hot CPI is
+     bad news, hot GDP is good news - and gets genuinely ambiguous for
+     things like payrolls). Pure magnitude vs. expectation instead. */
+  .econ-stat-cell.actual { color: var(--off-white); }
+  .econ-stat-cell.actual.hot { color: var(--red); }
+  .econ-stat-cell.actual.cold { color: var(--blue-bright); }
 
   .econ-table-head { display: flex; align-items: center; gap: 10px; padding: 0 0 4px 0; }
   .econ-table-head-spacer { flex: 1 1 auto; }
@@ -811,7 +820,9 @@
   .econ-stats { display: flex; gap: 12px; padding-left: 14px; }
   .econ-stat { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
   .econ-stat b { font-family: 'Inter', sans-serif; font-weight: 700; color: var(--off-white); }
-  .econ-stat.actual b { color: var(--blue-bright); }
+  .econ-stat.actual b { color: var(--off-white); }
+  .econ-stat.actual.hot b { color: var(--red); }
+  .econ-stat.actual.cold b { color: var(--blue-bright); }
 
   .impact-dot {
     display: inline-block;
@@ -1760,11 +1771,37 @@ function econStatVal(v) {
   return s.length ? s : null;
 }
 
+// Compares actual vs. forecast to flag whether the print landed hot (above
+// consensus) or cold (below) - pure magnitude, no attempt to judge whether
+// that's bullish or bearish (that flips per indicator: hot CPI is bad news,
+// hot GDP is good news, and it's genuinely ambiguous for things like
+// payrolls). Billy asked for exactly this framing over a good/bad-news
+// framing (2026-07-15). Returns "hot", "cold", or "" (in-line, or either
+// value isn't a plain number - e.g. "217K" - in which case no color
+// judgment is made rather than risk a wrong one). Mirrors the same
+// stripping rules as _parse_econ_number() in news_sources.py (%, commas,
+// &nbsp;) so a value that fails to parse there also fails here.
+function econSurpriseClass(forecast, actual) {
+  if (forecast === null || actual === null) return "";
+  const clean = (s) => {
+    const n = Number(String(s).replace(/&nbsp;/gi, "").replace(/%/g, "").replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : null;
+  };
+  const f = clean(forecast), a = clean(actual);
+  if (f === null || a === null) return "";
+  if (a > f) return "hot";
+  if (a < f) return "cold";
+  return "";
+}
+
 function buildEconStats(prior, forecast, actual) {
   const parts = [];
   if (prior !== null) parts.push(`<span class="econ-stat prior">Prior <b>${esc(prior)}</b></span>`);
   if (forecast !== null) parts.push(`<span class="econ-stat forecast">Forecast <b>${esc(forecast)}</b></span>`);
-  if (actual !== null) parts.push(`<span class="econ-stat actual">Actual <b>${esc(actual)}</b></span>`);
+  if (actual !== null) {
+    const surprise = econSurpriseClass(forecast, actual);
+    parts.push(`<span class="econ-stat actual ${surprise}">Actual <b>${esc(actual)}</b></span>`);
+  }
   return parts.length ? `<div class="econ-stats">${parts.join("")}</div>` : "";
 }
 
@@ -1778,7 +1815,8 @@ function buildEconStatsRow(prior, forecast, actual) {
   const cell = (v, cls) => v !== null
     ? `<span class="econ-stat-cell ${cls}">${esc(v)}</span>`
     : `<span class="econ-stat-cell empty">-</span>`;
-  return `<div class="econ-stats-row">${cell(prior, "prior")}${cell(forecast, "forecast")}${cell(actual, "actual")}</div>`;
+  const actualCls = actual !== null ? `actual ${econSurpriseClass(forecast, actual)}`.trim() : "actual";
+  return `<div class="econ-stats-row">${cell(prior, "prior")}${cell(forecast, "forecast")}${cell(actual, actualCls)}</div>`;
 }
 
 function econTableHead(scope) {
