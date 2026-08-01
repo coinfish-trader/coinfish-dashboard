@@ -760,6 +760,15 @@
      against the current time. */
   .econ-row.econ-row-past .name { color: var(--muted); }
   .econ-row.econ-row-past .econ-stat-cell.actual { color: var(--muted); }
+  /* ...but a past row is exactly where the hot/cold surprise color matters
+     most (a figure only exists AFTER its release, so essentially every
+     colored Actual sits in a past row). Without these two overrides the
+     muting rule above wins on specificity and the whole hot/cold signal is
+     invisible on the main list - which is what Billy hit on 2026-08-01.
+     Keep the red/blue hue on past rows; the greying still applies to the
+     event name, so the "already happened" cue survives. */
+  .econ-row.econ-row-past .econ-stat-cell.actual.hot { color: var(--red); }
+  .econ-row.econ-row-past .econ-stat-cell.actual.cold { color: var(--blue-bright); }
   .econ-next-divider {
     height: 2px;
     margin: 6px 0 4px;
