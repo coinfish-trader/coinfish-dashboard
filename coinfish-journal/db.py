@@ -60,6 +60,34 @@ def init_db():
         trade_count INTEGER,
         open_count INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS trade_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_time TEXT,
+        symbol TEXT,
+        strategy TEXT,
+        strikes TEXT,
+        expiry TEXT,
+        size INTEGER,
+        planned_credit REAL,
+        vix REAL,
+        price_vs_9ema TEXT,
+        price_vs_21ema TEXT,
+        ema_cross TEXT,
+        macd TEXT,
+        efi TEXT,
+        squeeze_state TEXT,
+        squeeze_bars INTEGER,
+        iv_rank REAL,
+        trend_read TEXT,
+        thesis TEXT,
+        profit_target TEXT,
+        stop_plan TEXT,
+        followed_process INTEGER,
+        process_note TEXT,
+        linked_trade_key TEXT,
+        created_at TEXT
+    );
     """)
     conn.commit()
     conn.close()
@@ -148,3 +176,48 @@ def last_import():
     row = conn.execute("SELECT * FROM import_log ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+ENTRY_FIELDS = [
+    "entry_time", "symbol", "strategy", "strikes", "expiry", "size", "planned_credit",
+    "vix", "price_vs_9ema", "price_vs_21ema", "ema_cross", "macd", "efi",
+    "squeeze_state", "squeeze_bars", "iv_rank", "trend_read", "thesis",
+    "profit_target", "stop_plan", "followed_process", "process_note",
+]
+
+
+def create_entry(payload):
+    import datetime
+    conn = get_conn()
+    cur = conn.cursor()
+    cols = [f for f in ENTRY_FIELDS if f in payload]
+    values = [payload[c] for c in cols]
+    cols.append("created_at")
+    values.append(datetime.datetime.utcnow().isoformat())
+    placeholders = ",".join(["?"] * len(cols))
+    cur.execute(f"INSERT INTO trade_entries ({','.join(cols)}) VALUES ({placeholders})", values)
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return new_id
+
+
+def get_all_entries():
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM trade_entries ORDER BY entry_time DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def link_entry(entry_id, trade_key):
+    conn = get_conn()
+    conn.execute("UPDATE trade_entries SET linked_trade_key=? WHERE id=?", (trade_key, entry_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_entry(entry_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM trade_entries WHERE id=?", (entry_id,))
+    conn.commit()
+    conn.close()
