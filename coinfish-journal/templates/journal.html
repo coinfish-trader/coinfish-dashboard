@@ -103,13 +103,32 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 
 #equity-chart{width:100%; height:260px;}
 
+.cal-controls{display:flex; align-items:center; gap:12px; margin-bottom:16px;}
+.cal-controls select{
+  background:var(--navy-700); border:1px solid rgba(255,255,255,0.12); color:var(--white); border-radius:8px;
+  padding:8px 12px; font-family:var(--f-head); font-weight:600; font-size:0.85rem;
+}
+.cal-nav-btn{
+  background:var(--navy-700); border:1px solid rgba(255,255,255,0.12); color:var(--white); border-radius:8px;
+  padding:7px 12px; font-family:var(--f-head); font-weight:600; font-size:0.85rem; cursor:pointer;
+}
+.cal-nav-btn:hover{border-color:var(--teal-bright); color:var(--teal-bright);}
+.cal-month-summary{font-size:0.78rem; color:rgba(255,255,255,0.5); margin-left:auto;}
+.cal-weekdays{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:6px;}
+.cal-weekdays div{
+  text-align:center; font-family:var(--f-head); font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em;
+  color:rgba(255,255,255,0.4); padding:2px 0;
+}
 .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
 .cal-day{
   aspect-ratio:1; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center;
   font-size:0.68rem; padding:4px; border:1px solid rgba(255,255,255,0.06);
 }
+.cal-day.pad{border:none; background:transparent !important;}
+.cal-day.no-trade{opacity:0.45;}
 .cal-day .d{font-family:var(--f-head); font-weight:600; opacity:0.6; font-size:0.62rem;}
 .cal-day .p{font-family:var(--f-head); font-weight:700; margin-top:2px;}
+.cal-day .n{font-size:0.58rem; color:rgba(255,255,255,0.35); margin-top:1px;}
 .cal-month-label{font-family:var(--f-head); font-weight:600; margin:18px 0 10px; color:var(--teal-bright);}
 
 .limitation-note{
@@ -214,6 +233,15 @@ tr:hover td{background:rgba(255,255,255,0.02);}
   <div class="view" id="view-calendar">
     <div class="panel">
       <h3>Daily P&amp;L Calendar</h3>
+      <div class="cal-controls">
+        <button class="cal-nav-btn" id="cal-prev">&larr;</button>
+        <select id="cal-month-select"></select>
+        <button class="cal-nav-btn" id="cal-next">&rarr;</button>
+        <div class="cal-month-summary" id="cal-month-summary"></div>
+      </div>
+      <div class="cal-weekdays">
+        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+      </div>
       <div id="calendar-body"></div>
     </div>
   </div>
@@ -427,34 +455,86 @@ async function saveMeta(tradeKey){
   hint.classList.add('saved');
 }
 
-function renderCalendar(){
+let calSelectedMonth = null; // 'YYYY-MM'
+
+function getCalMonths(){
   const cal = STATE.calendar;
-  const days = Object.keys(cal).sort();
+  const months = new Set(Object.keys(cal).map(d => d.slice(0,7)));
+  // Always include the current real-world month so the picker isn't stuck
+  // in the past on a fresh account with no trades yet this month.
+  const now = new Date();
+  months.add(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`);
+  return [...months].sort();
+}
+
+function renderCalendar(){
+  const months = getCalMonths();
+  const sel = document.getElementById('cal-month-select');
+
+  if(!calSelectedMonth || !months.includes(calSelectedMonth)){
+    calSelectedMonth = months[months.length - 1];
+  }
+
+  sel.innerHTML = months.map(m => {
+    const d = new Date(m + '-01T00:00:00');
+    const label = d.toLocaleString('default', {month:'long', year:'numeric'});
+    return `<option value="${m}" ${m === calSelectedMonth ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+
+  renderCalendarMonth(calSelectedMonth);
+}
+
+function renderCalendarMonth(month){
+  const cal = STATE.calendar;
   const el = document.getElementById('calendar-body');
-  if(days.length === 0){ el.innerHTML = '<div class="empty">No trades yet</div>'; return; }
-  const byMonth = {};
-  days.forEach(d => {
-    const month = d.slice(0,7);
-    (byMonth[month] = byMonth[month] || []).push(d);
-  });
-  let html = '';
-  Object.keys(byMonth).sort().forEach(month => {
-    const monthDate = new Date(month + '-01T00:00:00');
-    html += `<div class="cal-month-label">${monthDate.toLocaleString('default',{month:'long', year:'numeric'})}</div>`;
-    html += '<div class="cal-grid">';
-    byMonth[month].forEach(d => {
-      const v = cal[d];
-      const cls = v.pnl > 0 ? 'pos' : (v.pnl < 0 ? 'neg' : '');
+  const summaryEl = document.getElementById('cal-month-summary');
+
+  const [year, mo] = month.split('-').map(Number);
+  const firstWeekday = new Date(year, mo - 1, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, mo, 0).getDate();
+
+  let html = '<div class="cal-grid">';
+  for(let i = 0; i < firstWeekday; i++){
+    html += '<div class="cal-day pad"></div>';
+  }
+  let monthPnl = 0, tradedDays = 0, tradeCount = 0;
+  for(let day = 1; day <= daysInMonth; day++){
+    const dateStr = `${year}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const v = cal[dateStr];
+    if(v){
+      monthPnl += v.pnl; tradedDays++; tradeCount += v.count;
       const bg = v.pnl > 0 ? 'rgba(47,191,113,0.18)' : (v.pnl < 0 ? 'rgba(224,85,90,0.18)' : 'rgba(255,255,255,0.04)');
       html += `<div class="cal-day" style="background:${bg}">
-        <div class="d">${d.slice(8,10)}</div>
+        <div class="d">${day}</div>
         <div class="p ${moneyClass(v.pnl)}">${fmtMoney(v.pnl)}</div>
+        <div class="n">${v.count} trade${v.count === 1 ? '' : 's'}</div>
       </div>`;
-    });
-    html += '</div>';
-  });
+    } else {
+      html += `<div class="cal-day no-trade"><div class="d">${day}</div></div>`;
+    }
+  }
+  html += '</div>';
   el.innerHTML = html;
+
+  summaryEl.textContent = tradedDays > 0
+    ? `${fmtMoney(monthPnl)} across ${tradeCount} trade${tradeCount === 1 ? '' : 's'} on ${tradedDays} day${tradedDays === 1 ? '' : 's'}`
+    : 'No trades this month';
 }
+
+document.getElementById('cal-month-select').addEventListener('change', (e) => {
+  calSelectedMonth = e.target.value;
+  renderCalendarMonth(calSelectedMonth);
+});
+document.getElementById('cal-prev').addEventListener('click', () => {
+  const months = getCalMonths();
+  const i = months.indexOf(calSelectedMonth);
+  if(i > 0){ calSelectedMonth = months[i-1]; renderCalendar(); }
+});
+document.getElementById('cal-next').addEventListener('click', () => {
+  const months = getCalMonths();
+  const i = months.indexOf(calSelectedMonth);
+  if(i >= 0 && i < months.length - 1){ calSelectedMonth = months[i+1]; renderCalendar(); }
+});
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
