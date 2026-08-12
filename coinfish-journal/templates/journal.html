@@ -131,6 +131,39 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .cal-day .n{font-size:0.58rem; color:rgba(255,255,255,0.35); margin-top:1px;}
 .cal-month-label{font-family:var(--f-head); font-weight:600; margin:18px 0 10px; color:var(--teal-bright);}
 
+.field-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px; margin-bottom:18px;}
+.field{display:flex; flex-direction:column; gap:6px;}
+.field label{font-family:var(--f-head); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; color:rgba(255,255,255,0.5);}
+.field input[type=text], .field input[type=number], .field input[type=datetime-local], .field select, .field textarea{
+  background:var(--navy-700); border:1px solid rgba(255,255,255,0.15); border-radius:8px; color:var(--white);
+  font-family:var(--f-body); font-size:0.85rem; padding:8px 10px;
+}
+.field textarea{min-height:50px; resize:vertical;}
+.field.wide{grid-column:1 / -1;}
+.toggle-group{display:flex; gap:6px; flex-wrap:wrap;}
+.toggle-btn{
+  background:var(--navy-700); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.6);
+  font-family:var(--f-head); font-weight:600; font-size:0.76rem; padding:7px 12px; border-radius:8px; cursor:pointer;
+}
+.toggle-btn:hover{border-color:var(--teal-bright); color:var(--teal-bright);}
+.toggle-btn.active{background:var(--teal); border-color:var(--teal-bright); color:var(--white);}
+.toggle-btn.active.bad{background:var(--loss); border-color:#ff8a8e;}
+.section-label{font-family:var(--f-head); font-weight:600; font-size:0.78rem; color:var(--gold-bright); margin:18px 0 10px; text-transform:uppercase; letter-spacing:0.06em;}
+.section-label:first-child{margin-top:0;}
+.entry-card{background:var(--navy-700); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:14px 16px; margin-bottom:12px;}
+.entry-card-top{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;}
+.entry-card-title{font-family:var(--f-head); font-weight:700; font-size:0.95rem;}
+.entry-card-meta{font-size:0.75rem; color:rgba(255,255,255,0.45);}
+.chip-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;}
+.chip{background:rgba(255,255,255,0.06); border-radius:100px; padding:3px 10px; font-size:0.72rem; color:rgba(255,255,255,0.7);}
+.chip.pos{background:rgba(47,191,113,0.15); color:var(--win);}
+.chip.neg{background:rgba(224,85,90,0.15); color:var(--loss);}
+.link-row{display:flex; align-items:center; gap:8px; margin-top:10px; font-size:0.78rem;}
+.link-row select{background:var(--navy-800); border:1px solid rgba(255,255,255,0.15); color:var(--white); border-radius:6px; padding:5px 8px; font-size:0.78rem;}
+.badge-linked{background:rgba(37,197,212,0.18); color:var(--teal-bright); border-radius:100px; padding:2px 9px; font-size:0.68rem; font-weight:600; font-family:var(--f-head);}
+.journal-badge-btn{background:none; border:none; cursor:pointer; font-size:0.85rem; padding:0;}
+.entry-detail-row td{background:rgba(255,255,255,0.02); padding:12px 14px;}
+
 .limitation-note{
   font-size:0.76rem; color:rgba(255,255,255,0.45); background:rgba(212,175,55,0.08); border:1px solid rgba(212,175,55,0.25);
   border-radius:10px; padding:12px 14px; margin-bottom:22px; line-height:1.5;
@@ -164,6 +197,7 @@ tr:hover td{background:rgba(255,255,255,0.02);}
     <button class="tab-btn active" data-view="dashboard">Dashboard</button>
     <button class="tab-btn" data-view="log">Trade Log</button>
     <button class="tab-btn" data-view="calendar">Calendar</button>
+    <button class="tab-btn" data-view="entries">Log Entry</button>
   </nav>
 
   <!-- DASHBOARD -->
@@ -221,6 +255,7 @@ tr:hover td{background:rgba(255,255,255,0.02);}
             <th data-sort="pnl">P&amp;L</th>
             <th data-sort="pct_return_on_credit">Return on Credit</th>
             <th data-sort="result">Result</th>
+            <th>Entry Log</th>
             <th>Notes / Tags</th>
           </tr>
         </thead>
@@ -243,6 +278,78 @@ tr:hover td{background:rgba(255,255,255,0.02);}
         <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
       </div>
       <div id="calendar-body"></div>
+    </div>
+  </div>
+
+  <!-- LOG ENTRY -->
+  <div class="view" id="view-entries">
+    <div class="panel">
+      <h3>Log a New Trade</h3>
+      <p style="font-size:0.8rem; color:rgba(255,255,255,0.5); margin-bottom:16px;">
+        Fill this out the moment you put a trade on. The checklist fields are one click each,
+        skip anything you don't have handy, nothing here is required except symbol and strategy.
+      </p>
+
+      <div class="section-label">Trade Basics</div>
+      <div class="field-grid">
+        <div class="field"><label>Entry Time</label><input type="datetime-local" id="ef-entry_time"></div>
+        <div class="field"><label>Symbol</label><input type="text" id="ef-symbol" placeholder="AAPL"></div>
+        <div class="field">
+          <label>Strategy</label>
+          <select id="ef-strategy">
+            <option value="">Select&hellip;</option>
+            <option>Credit Put Vertical</option>
+            <option>Credit Call Vertical</option>
+            <option>Iron Condor</option>
+            <option>Debit Vertical</option>
+            <option>Single Option</option>
+            <option>Covered Call</option>
+            <option>Cash-Secured Put</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field"><label>Strikes</label><input type="text" id="ef-strikes" placeholder="165/170"></div>
+        <div class="field"><label>Expiry</label><input type="text" id="ef-expiry" placeholder="2026-09-19"></div>
+        <div class="field"><label>Size</label><input type="number" id="ef-size" placeholder="1"></div>
+        <div class="field"><label>Planned Credit</label><input type="number" id="ef-planned_credit" placeholder="45.00" step="0.01"></div>
+      </div>
+
+      <div class="section-label">Market Context</div>
+      <div class="field-grid">
+        <div class="field"><label>VIX</label><input type="number" id="ef-vix" placeholder="16.2" step="0.1"></div>
+        <div class="field"><label>IV Rank</label><input type="number" id="ef-iv_rank" placeholder="45" min="0" max="100"></div>
+        <div class="field"><label>Squeeze Bars</label><input type="number" id="ef-squeeze_bars" placeholder="e.g. 6"></div>
+      </div>
+      <div class="field-grid">
+        <div class="field"><label>Price vs 9 EMA</label><div class="toggle-group" data-toggle="price_vs_9ema"><button type="button" data-val="above">Above</button><button type="button" data-val="below">Below</button></div></div>
+        <div class="field"><label>Price vs 21 EMA</label><div class="toggle-group" data-toggle="price_vs_21ema"><button type="button" data-val="above">Above</button><button type="button" data-val="below">Below</button></div></div>
+        <div class="field"><label>9 EMA vs 21 EMA</label><div class="toggle-group" data-toggle="ema_cross"><button type="button" data-val="bullish">Bullish (9&gt;21)</button><button type="button" data-val="bearish">Bearish (9&lt;21)</button></div></div>
+        <div class="field"><label>MACD</label><div class="toggle-group" data-toggle="macd"><button type="button" data-val="above">Above Signal</button><button type="button" data-val="below">Below Signal</button></div></div>
+        <div class="field"><label>EFI</label><div class="toggle-group" data-toggle="efi"><button type="button" data-val="positive">Positive</button><button type="button" data-val="negative">Negative</button></div></div>
+        <div class="field"><label>Squeeze</label><div class="toggle-group" data-toggle="squeeze_state"><button type="button" data-val="off">Off</button><button type="button" data-val="on">On</button><button type="button" data-val="firing_bullish">Firing Bull</button><button type="button" data-val="firing_bearish">Firing Bear</button></div></div>
+        <div class="field"><label>Overall Trend</label><div class="toggle-group" data-toggle="trend_read"><button type="button" data-val="bullish">Bullish</button><button type="button" data-val="bearish">Bearish</button><button type="button" data-val="neutral">Neutral</button></div></div>
+      </div>
+
+      <div class="section-label">Thesis &amp; Plan</div>
+      <div class="field-grid">
+        <div class="field wide"><label>Why This Trade</label><textarea id="ef-thesis" placeholder="What's the setup / thesis..."></textarea></div>
+        <div class="field"><label>Profit Target</label><input type="text" id="ef-profit_target" placeholder="50% of credit"></div>
+        <div class="field"><label>Stop / Invalidation</label><input type="text" id="ef-stop_plan" placeholder="Close if short strike tested"></div>
+      </div>
+
+      <div class="section-label">Process Check</div>
+      <div class="field-grid">
+        <div class="field"><label>Followed Checklist</label><div class="toggle-group" data-toggle="followed_process"><button type="button" data-val="1">Yes</button><button type="button" data-val="0">No</button></div></div>
+        <div class="field wide"><label>Process Note</label><input type="text" id="ef-process_note" placeholder="Only fill in if you overrode a signal"></div>
+      </div>
+
+      <button class="refresh-btn" id="save-entry-btn" style="margin-top:8px;">Save Entry</button>
+      <span id="entry-save-hint" style="margin-left:12px; font-size:0.78rem; color:rgba(255,255,255,0.4);"></span>
+    </div>
+
+    <div class="panel">
+      <h3>Logged Trades</h3>
+      <div id="entries-list"></div>
     </div>
   </div>
 </div>
@@ -268,6 +375,7 @@ function renderAll(){
   populateFilters();
   renderLog();
   renderCalendar();
+  renderEntries();
 }
 
 function renderLastImport(){
@@ -406,11 +514,20 @@ function getFilteredSorted(){
   return rows;
 }
 
+function findLinkedEntry(tradeKey){
+  return (STATE.entries || []).find(e => e.linked_trade_key === tradeKey);
+}
+
 function renderLog(){
   const rows = getFilteredSorted();
   const tbody = document.querySelector('#log-table tbody');
-  if(rows.length === 0){ tbody.innerHTML = '<tr><td colspan="9" class="empty">No trades match those filters</td></tr>'; return; }
-  tbody.innerHTML = rows.map(t => `
+  if(rows.length === 0){ tbody.innerHTML = '<tr><td colspan="10" class="empty">No trades match those filters</td></tr>'; return; }
+  tbody.innerHTML = rows.map(t => {
+    const entry = findLinkedEntry(t.trade_key);
+    const journalCell = entry
+      ? `<button class="journal-badge-btn" data-expand="${t.trade_key}" title="View logged entry">&#128221;<span class="badge-linked" style="margin-left:4px;">Logged</span></button>`
+      : '<span style="color:rgba(255,255,255,0.3); font-size:0.75rem;">&ndash;</span>';
+    return `
     <tr>
       <td>${t.close_time.slice(0,10)}</td>
       <td><strong>${t.symbol}</strong></td>
@@ -420,13 +537,15 @@ function renderLog(){
       <td class="${moneyClass(t.pnl)}">${fmtMoney(t.pnl)}</td>
       <td>${t.pct_return_on_credit !== null ? t.pct_return_on_credit + '%' : 'N/A'}</td>
       <td><span class="pill ${t.result}">${t.result}</span></td>
+      <td>${journalCell}</td>
       <td class="notes-cell">
         <textarea data-key="${t.trade_key}" data-field="notes" placeholder="Notes...">${t.notes || ''}</textarea>
         <input class="tags-input" data-key="${t.trade_key}" data-field="tags" placeholder="tags, comma, separated" value="${t.tags || ''}">
         <div class="save-hint" id="hint-${t.trade_key}">&nbsp;</div>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   tbody.querySelectorAll('[data-key]').forEach(el => {
     let timer;
@@ -438,6 +557,47 @@ function renderLog(){
       timer = setTimeout(() => saveMeta(el.dataset.key), 600);
     });
   });
+
+  tbody.querySelectorAll('[data-expand]').forEach(btn => {
+    btn.addEventListener('click', () => toggleEntryDetail(btn, btn.dataset.expand));
+  });
+}
+
+function toggleEntryDetail(btn, tradeKey){
+  const row = btn.closest('tr');
+  const existing = row.nextElementSibling;
+  if(existing && existing.classList.contains('entry-detail-row')){
+    existing.remove();
+    return;
+  }
+  document.querySelectorAll('.entry-detail-row').forEach(r => r.remove());
+  const e = findLinkedEntry(tradeKey);
+  if(!e) return;
+  const tr = document.createElement('tr');
+  tr.className = 'entry-detail-row';
+  tr.innerHTML = `<td colspan="10">${entryChecklistHtml(e)}</td>`;
+  row.after(tr);
+}
+
+function entryChecklistHtml(e){
+  const chips = [];
+  if(e.vix !== null && e.vix !== undefined) chips.push(`<span class="chip">VIX ${e.vix}</span>`);
+  if(e.price_vs_9ema) chips.push(`<span class="chip">Price ${e.price_vs_9ema} 9EMA</span>`);
+  if(e.price_vs_21ema) chips.push(`<span class="chip">Price ${e.price_vs_21ema} 21EMA</span>`);
+  if(e.ema_cross) chips.push(`<span class="chip ${e.ema_cross==='bullish'?'pos':'neg'}">9/21 ${e.ema_cross}</span>`);
+  if(e.macd) chips.push(`<span class="chip ${e.macd==='above'?'pos':'neg'}">MACD ${e.macd} signal</span>`);
+  if(e.efi) chips.push(`<span class="chip ${e.efi==='positive'?'pos':'neg'}">EFI ${e.efi}</span>`);
+  if(e.squeeze_state) chips.push(`<span class="chip">Squeeze: ${e.squeeze_state.replace('_',' ')}${e.squeeze_bars?' ('+e.squeeze_bars+' bars)':''}</span>`);
+  if(e.iv_rank !== null && e.iv_rank !== undefined) chips.push(`<span class="chip">IV Rank ${e.iv_rank}</span>`);
+  if(e.trend_read) chips.push(`<span class="chip">Trend: ${e.trend_read}</span>`);
+  if(e.followed_process !== null && e.followed_process !== undefined) chips.push(`<span class="chip ${e.followed_process ? 'pos' : 'neg'}">Followed process: ${e.followed_process ? 'Yes' : 'No'}</span>`);
+  return `
+    <div class="chip-row">${chips.join('') || '<span class="empty" style="padding:0;">No checklist fields logged</span>'}</div>
+    ${e.thesis ? `<div style="font-size:0.82rem; margin-top:6px;"><b>Thesis:</b> ${e.thesis}</div>` : ''}
+    ${e.profit_target ? `<div style="font-size:0.82rem;"><b>Target:</b> ${e.profit_target}</div>` : ''}
+    ${e.stop_plan ? `<div style="font-size:0.82rem;"><b>Stop plan:</b> ${e.stop_plan}</div>` : ''}
+    ${e.process_note ? `<div style="font-size:0.82rem;"><b>Process note:</b> ${e.process_note}</div>` : ''}
+  `;
 }
 
 async function saveMeta(tradeKey){
@@ -564,6 +724,140 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
   await loadData();
   btn.textContent = 'Reload from data file';
 });
+
+// ---- Log Entry tab ----
+
+const entryToggles = {}; // e.g. { price_vs_9ema: 'above' }
+
+document.querySelectorAll('.toggle-group').forEach(group => {
+  const key = group.dataset.toggle;
+  group.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const already = btn.classList.contains('active');
+      group.querySelectorAll('button').forEach(b => b.classList.remove('active', 'bad'));
+      if(already){
+        delete entryToggles[key];
+      } else {
+        btn.classList.add('active');
+        if(key === 'followed_process' && btn.dataset.val === '0') btn.classList.add('bad');
+        entryToggles[key] = btn.dataset.val;
+      }
+    });
+  });
+});
+
+function setDefaultEntryTime(){
+  const el = document.getElementById('ef-entry_time');
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  el.value = now.toISOString().slice(0,16);
+}
+setDefaultEntryTime();
+
+function numOrNull(id){
+  const v = document.getElementById(id).value;
+  return v === '' ? null : parseFloat(v);
+}
+function strOrNull(id){
+  const v = document.getElementById(id).value.trim();
+  return v === '' ? null : v;
+}
+
+document.getElementById('save-entry-btn').addEventListener('click', async () => {
+  const symbol = document.getElementById('ef-symbol').value.trim().toUpperCase();
+  const strategy = document.getElementById('ef-strategy').value;
+  const hint = document.getElementById('entry-save-hint');
+  if(!symbol || !strategy){
+    hint.textContent = 'Symbol and strategy are required.';
+    hint.style.color = 'var(--loss)';
+    return;
+  }
+  const payload = {
+    entry_time: document.getElementById('ef-entry_time').value ? new Date(document.getElementById('ef-entry_time').value).toISOString() : new Date().toISOString(),
+    symbol, strategy,
+    strikes: strOrNull('ef-strikes'),
+    expiry: strOrNull('ef-expiry'),
+    size: numOrNull('ef-size'),
+    planned_credit: numOrNull('ef-planned_credit'),
+    vix: numOrNull('ef-vix'),
+    iv_rank: numOrNull('ef-iv_rank'),
+    squeeze_bars: numOrNull('ef-squeeze_bars'),
+    thesis: strOrNull('ef-thesis'),
+    profit_target: strOrNull('ef-profit_target'),
+    stop_plan: strOrNull('ef-stop_plan'),
+    process_note: strOrNull('ef-process_note'),
+    price_vs_9ema: entryToggles.price_vs_9ema || null,
+    price_vs_21ema: entryToggles.price_vs_21ema || null,
+    ema_cross: entryToggles.ema_cross || null,
+    macd: entryToggles.macd || null,
+    efi: entryToggles.efi || null,
+    squeeze_state: entryToggles.squeeze_state || null,
+    trend_read: entryToggles.trend_read || null,
+    followed_process: entryToggles.followed_process !== undefined ? parseInt(entryToggles.followed_process) : null,
+  };
+
+  hint.textContent = 'Saving...';
+  hint.style.color = 'rgba(255,255,255,0.4)';
+  const res = await fetch('/api/entries', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const data = await res.json();
+  if(data.ok){
+    hint.textContent = 'Saved.';
+    hint.style.color = 'var(--win)';
+    document.querySelectorAll('#view-entries .field input, #view-entries .field textarea').forEach(el => el.value = '');
+    document.getElementById('ef-strategy').value = '';
+    document.querySelectorAll('#view-entries .toggle-btn, #view-entries .toggle-group button').forEach(b => b.classList.remove('active','bad'));
+    Object.keys(entryToggles).forEach(k => delete entryToggles[k]);
+    setDefaultEntryTime();
+    await loadData();
+    document.querySelector('.tab-btn[data-view="entries"]').click();
+  } else {
+    hint.textContent = data.error || 'Something went wrong.';
+    hint.style.color = 'var(--loss)';
+  }
+});
+
+function renderEntries(){
+  const el = document.getElementById('entries-list');
+  const entries = STATE.entries || [];
+  if(entries.length === 0){ el.innerHTML = '<div class="empty">No trades logged yet</div>'; return; }
+
+  const closedTrades = STATE.trades || [];
+
+  el.innerHTML = entries.map(e => {
+    const linkedTrade = e.linked_trade_key ? closedTrades.find(t => t.trade_key === e.linked_trade_key) : null;
+    const candidateTrades = closedTrades.filter(t => t.symbol === e.symbol);
+    const linkHtml = linkedTrade
+      ? `<span class="badge-linked">Linked &rarr; closed ${linkedTrade.close_time.slice(0,10)}, ${fmtMoney(linkedTrade.pnl)}</span>`
+      : (candidateTrades.length > 0
+        ? `<div class="link-row">Link to closed trade:
+            <select data-link-entry="${e.id}">
+              <option value="">Select&hellip;</option>
+              ${candidateTrades.map(t => `<option value="${t.trade_key}">${t.close_time.slice(0,10)} &middot; ${fmtMoney(t.pnl)}</option>`).join('')}
+            </select>
+          </div>`
+        : `<span style="font-size:0.75rem; color:rgba(255,255,255,0.35);">Still open, nothing to link yet</span>`);
+
+    return `
+      <div class="entry-card">
+        <div class="entry-card-top">
+          <div class="entry-card-title">${e.symbol} &middot; ${e.strategy}${e.strikes ? ' ('+e.strikes+')' : ''}</div>
+          <div class="entry-card-meta">${new Date(e.entry_time).toLocaleString()}</div>
+        </div>
+        ${entryChecklistHtml(e)}
+        ${linkHtml}
+      </div>
+    `;
+  }).join('');
+
+  el.querySelectorAll('[data-link-entry]').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const entryId = sel.dataset.linkEntry;
+      if(!sel.value) return;
+      await fetch(`/api/entries/${entryId}/link`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({trade_key: sel.value})});
+      await loadData();
+    });
+  });
+}
 
 loadData();
 </script>
