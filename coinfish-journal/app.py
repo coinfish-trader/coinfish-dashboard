@@ -144,7 +144,30 @@ def api_trades():
         "by_strategy": pnl_by_strategy(trades),
         "calendar": calendar_pnl(trades),
         "last_import": db.last_import(),
+        "entries": db.get_all_entries(),
     })
+
+
+@app.route("/api/entries", methods=["POST"])
+def api_create_entry():
+    payload = request.get_json(force=True)
+    if not payload.get("symbol") or not payload.get("strategy"):
+        return jsonify({"ok": False, "error": "Symbol and strategy are required."}), 400
+    new_id = db.create_entry(payload)
+    return jsonify({"ok": True, "id": new_id})
+
+
+@app.route("/api/entries/<int:entry_id>/link", methods=["POST"])
+def api_link_entry(entry_id):
+    payload = request.get_json(force=True)
+    db.link_entry(entry_id, payload.get("trade_key"))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/entries/<int:entry_id>", methods=["DELETE"])
+def api_delete_entry(entry_id):
+    db.delete_entry(entry_id)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/trade/<trade_key>", methods=["POST"])
