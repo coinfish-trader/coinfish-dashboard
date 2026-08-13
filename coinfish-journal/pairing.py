@@ -154,6 +154,7 @@ def build_round_trips(events):
             "pnl_after_commission": round(pnl - total_commission, 4) if pnl is not None else None,
             "pct_return_on_credit": pct_return_on_credit,
             "result": "win" if pnl > 0.005 else ("loss" if pnl < -0.005 else "breakeven"),
+            "source": "ibkr",
         })
 
     for symbol, q in open_queues.items():
