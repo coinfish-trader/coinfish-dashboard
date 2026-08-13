@@ -114,12 +114,21 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 }
 .cal-nav-btn:hover{border-color:var(--teal-bright); color:var(--teal-bright);}
 .cal-month-summary{font-size:0.78rem; color:rgba(255,255,255,0.5); margin-left:auto;}
-.cal-weekdays{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:6px;}
+.cal-weekdays{display:grid; grid-template-columns:repeat(7,1fr) 92px; gap:6px; margin-bottom:6px;}
 .cal-weekdays div{
   text-align:center; font-family:var(--f-head); font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em;
   color:rgba(255,255,255,0.4); padding:2px 0;
 }
 .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+.cal-week{display:grid; grid-template-columns:repeat(7,1fr) 92px; gap:6px; margin-bottom:6px;}
+.cal-week-total{
+  background:rgba(255,255,255,0.04); border-radius:8px; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; padding:4px; font-family:var(--f-head);
+}
+.cal-week-total .wl{font-size:0.6rem; color:rgba(255,255,255,0.45);}
+.cal-week-total .wl .w{color:var(--win);}
+.cal-week-total .wl .l{color:var(--loss); margin-left:5px;}
+.cal-week-total .amt{font-weight:700; font-size:0.8rem; margin-top:3px;}
 .cal-day{
   aspect-ratio:1; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center;
   font-size:0.68rem; padding:4px; border:1px solid rgba(255,255,255,0.06);
@@ -141,13 +150,13 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .field textarea{min-height:50px; resize:vertical;}
 .field.wide{grid-column:1 / -1;}
 .toggle-group{display:flex; gap:6px; flex-wrap:wrap;}
-.toggle-btn{
+.toggle-btn, .toggle-group button{
   background:var(--navy-700); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.6);
   font-family:var(--f-head); font-weight:600; font-size:0.76rem; padding:7px 12px; border-radius:8px; cursor:pointer;
 }
-.toggle-btn:hover{border-color:var(--teal-bright); color:var(--teal-bright);}
-.toggle-btn.active{background:var(--teal); border-color:var(--teal-bright); color:var(--white);}
-.toggle-btn.active.bad{background:var(--loss); border-color:#ff8a8e;}
+.toggle-btn:hover, .toggle-group button:hover{border-color:var(--teal-bright); color:var(--teal-bright);}
+.toggle-btn.active, .toggle-group button.active{background:var(--teal); border-color:var(--teal-bright); color:var(--white);}
+.toggle-btn.active.bad, .toggle-group button.active.bad{background:var(--loss); border-color:#ff8a8e;}
 .section-label{font-family:var(--f-head); font-weight:600; font-size:0.78rem; color:var(--gold-bright); margin:18px 0 10px; text-transform:uppercase; letter-spacing:0.06em;}
 .section-label:first-child{margin-top:0;}
 .entry-card{background:var(--navy-700); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:14px 16px; margin-bottom:12px;}
@@ -171,6 +180,25 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .limitation-note b{color:var(--gold-bright);}
 
 .empty{color:rgba(255,255,255,0.35); font-style:italic; padding:20px 0; text-align:center; font-family:var(--f-display);}
+
+.score-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-bottom:22px;}
+.score-card{background:var(--navy-800); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:18px 20px 16px; display:flex; flex-direction:column; align-items:center; text-align:center;}
+.score-label{font-family:var(--f-head); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.1em; color:rgba(255,255,255,0.5); margin-bottom:6px; align-self:flex-start;}
+.gauge-wrap{position:relative; width:150px; height:92px; margin:4px auto 0;}
+.gauge-wrap svg{width:100%; height:100%; display:block;}
+.gauge-readout{position:absolute; left:0; right:0; bottom:2px; text-align:center; font-family:var(--f-head); font-weight:700; font-size:1.2rem;}
+.gauge-side{display:flex; justify-content:center; gap:14px; width:100%; margin-top:12px; font-size:0.74rem; font-family:var(--f-head); font-weight:600;}
+.gauge-side .w{color:var(--win);}
+.gauge-side .l{color:var(--loss);}
+.gauge-side .be{color:rgba(255,255,255,0.5);}
+.closed-pnl-card{justify-content:center;}
+.closed-pnl-gross{font-family:var(--f-head); font-weight:700; font-size:1.7rem; margin:10px 0 14px;}
+.closed-pnl-split{display:flex; gap:10px; width:100%;}
+.closed-pnl-split > div{flex:1; background:rgba(255,255,255,0.04); border-radius:10px; padding:9px 10px;}
+.closed-pnl-split .split-label{font-size:0.62rem; text-transform:uppercase; letter-spacing:0.08em; color:rgba(255,255,255,0.4);}
+.closed-pnl-split .split-val{font-family:var(--f-head); font-weight:700; font-size:0.92rem; margin-top:3px;}
+.chart-total{font-family:var(--f-head); font-weight:600; font-size:0.8rem; color:rgba(255,255,255,0.55); margin-left:auto;}
+#agg-pnl-chart, #cumavg-chart{width:100%; height:220px;}
 </style>
 </head>
 <body>
@@ -196,18 +224,30 @@ tr:hover td{background:rgba(255,255,255,0.02);}
   <nav class="tabs">
     <button class="tab-btn active" data-view="dashboard">Dashboard</button>
     <button class="tab-btn" data-view="log">Trade Log</button>
-    <button class="tab-btn" data-view="calendar">Calendar</button>
     <button class="tab-btn" data-view="entries">Log Entry</button>
   </nav>
 
   <!-- DASHBOARD -->
   <div class="view active" id="view-dashboard">
+    <div class="score-row" id="score-row"></div>
+
     <div class="stat-grid" id="stat-grid"></div>
 
     <div class="two-col">
       <div class="panel">
-        <h3>Equity Curve (cumulative realized P&amp;L)</h3>
+        <h3>Aggregate P&amp;L vs Date</h3>
+        <svg id="agg-pnl-chart" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="panel">
+        <h3>Equity Curve (cumulative realized P&amp;L)<span class="chart-total" id="eq-total"></span></h3>
         <svg id="equity-chart" viewBox="0 0 600 260" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <h3>Cumulative Trade P&amp;L (Average)</h3>
+        <svg id="cumavg-chart" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
       </div>
       <div class="panel">
         <h3>Open Positions</h3>
@@ -216,6 +256,20 @@ tr:hover td{background:rgba(255,255,255,0.02);}
           <tbody></tbody>
         </table>
       </div>
+    </div>
+
+    <div class="panel">
+      <h3>Calendar</h3>
+      <div class="cal-controls">
+        <button class="cal-nav-btn" id="cal-prev">&larr;</button>
+        <select id="cal-month-select"></select>
+        <button class="cal-nav-btn" id="cal-next">&rarr;</button>
+        <div class="cal-month-summary" id="cal-month-summary"></div>
+      </div>
+      <div class="cal-weekdays">
+        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Total</div>
+      </div>
+      <div id="calendar-body"></div>
     </div>
 
     <div class="two-col">
@@ -261,23 +315,6 @@ tr:hover td{background:rgba(255,255,255,0.02);}
         </thead>
         <tbody></tbody>
       </table>
-    </div>
-  </div>
-
-  <!-- CALENDAR -->
-  <div class="view" id="view-calendar">
-    <div class="panel">
-      <h3>Daily P&amp;L Calendar</h3>
-      <div class="cal-controls">
-        <button class="cal-nav-btn" id="cal-prev">&larr;</button>
-        <select id="cal-month-select"></select>
-        <button class="cal-nav-btn" id="cal-next">&rarr;</button>
-        <div class="cal-month-summary" id="cal-month-summary"></div>
-      </div>
-      <div class="cal-weekdays">
-        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-      </div>
-      <div id="calendar-body"></div>
     </div>
   </div>
 
@@ -368,8 +405,11 @@ async function loadData(){
 
 function renderAll(){
   renderLastImport();
+  renderScoreRow();
   renderStats();
+  renderAggregatePnl();
   renderEquityCurve();
+  renderCumulativeAvg();
   renderOpenPositions();
   renderBySymbol();
   renderByStrategy();
@@ -398,12 +438,7 @@ function renderStats(){
   const s = STATE.stats;
   const cards = [
     ['Closed Trades', s.count, ''],
-    ['Win Rate', s.win_rate !== null ? s.win_rate + '%' : 'N/A', ''],
-    ['Total P&L', fmtMoney(s.total_pnl), moneyClass(s.total_pnl)],
     ['After Commission', fmtMoney(s.total_pnl_after_commission), moneyClass(s.total_pnl_after_commission)],
-    ['Avg Win', fmtMoney(s.avg_win), 'pos'],
-    ['Avg Loss', fmtMoney(s.avg_loss), 'neg'],
-    ['Profit Factor', s.profit_factor !== null ? s.profit_factor : 'N/A', ''],
     ['Expectancy / Trade', fmtMoney(s.expectancy), moneyClass(s.expectancy)],
     ['Largest Win', fmtMoney(s.largest_win), 'pos'],
     ['Largest Loss', fmtMoney(s.largest_loss), 'neg'],
@@ -418,21 +453,168 @@ function renderStats(){
   `).join('');
 }
 
+function fmtCompact(v){
+  if(v === null || v === undefined) return 'N/A';
+  const abs = Math.abs(v);
+  if(abs >= 1000){
+    return (v < 0 ? '-' : '') + '$' + (abs/1000).toFixed(1) + 'K';
+  }
+  return fmtMoney(v);
+}
+
+function computeTradeBreakdown(){
+  const trades = STATE.trades || [];
+  const wins = trades.filter(t => t.result === 'win');
+  const losses = trades.filter(t => t.result === 'loss');
+  const breakevens = trades.filter(t => t.result === 'breakeven');
+  const grossWin = wins.reduce((a,t) => a + t.pnl, 0);
+  const grossLoss = losses.reduce((a,t) => a + t.pnl, 0);
+  const avgTradePnl = trades.length ? (STATE.stats.total_pnl / trades.length) : 0;
+  return {wins, losses, breakevens, grossWin, grossLoss, avgTradePnl};
+}
+
+function polarPoint(cx, cy, r, fraction){
+  const angleDeg = 180 - fraction * 180;
+  const angleRad = angleDeg * Math.PI / 180;
+  return { x: cx + r * Math.cos(angleRad), y: cy - r * Math.sin(angleRad) };
+}
+
+function gaugeArcPath(cx, cy, r, f0, f1){
+  const p0 = polarPoint(cx, cy, r, f0);
+  const p1 = polarPoint(cx, cy, r, f1);
+  const largeArc = (f1 - f0) > 0.5 ? 1 : 0;
+  return `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
+}
+
+function renderGauge(containerId, value, min, max, zones, valueLabel){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const cx = 100, cy = 80, r = 72, trackWidth = 14;
+  const frac = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const bgArcs = zones.map(z => `<path d="${gaugeArcPath(cx,cy,r,z.from,z.to)}" fill="none" stroke="${z.color}" stroke-width="${trackWidth}" opacity="0.9"/>`).join('');
+  const needleP = polarPoint(cx, cy, r - 4, frac);
+  el.innerHTML = `
+    <svg viewBox="0 0 200 118">
+      ${bgArcs}
+      <line x1="${cx}" y1="${cy}" x2="${needleP.x.toFixed(2)}" y2="${needleP.y.toFixed(2)}" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="6" fill="#fff"/>
+    </svg>
+    <div class="gauge-readout">${valueLabel}</div>
+  `;
+}
+
+function renderScoreRow(){
+  const s = STATE.stats;
+  const b = computeTradeBreakdown();
+  const el = document.getElementById('score-row');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div class="score-card">
+      <div class="score-label">Trades Win %</div>
+      <div class="gauge-wrap" id="gauge-winrate"></div>
+      <div class="gauge-side">
+        <span class="w">W (${b.wins.length})</span>
+        <span class="be">BE (${b.breakevens.length})</span>
+        <span class="l">L (${b.losses.length})</span>
+      </div>
+    </div>
+    <div class="score-card">
+      <div class="score-label">Average Trade P&amp;L</div>
+      <div class="gauge-wrap" id="gauge-avgpnl"></div>
+      <div class="gauge-side">
+        <span class="w">W ${fmtCompact(s.avg_win)}</span>
+        <span class="l">L ${fmtCompact(s.avg_loss)}</span>
+      </div>
+    </div>
+    <div class="score-card">
+      <div class="score-label">Profit Factor</div>
+      <div class="gauge-wrap" id="gauge-pf"></div>
+      <div class="gauge-side">
+        <span class="w">W ${fmtCompact(b.grossWin)}</span>
+        <span class="l">L ${fmtCompact(b.grossLoss)}</span>
+      </div>
+    </div>
+    <div class="score-card closed-pnl-card">
+      <div class="score-label">Closed P&amp;L</div>
+      <div class="closed-pnl-gross ${moneyClass(s.total_pnl)}">${fmtMoney(s.total_pnl)}</div>
+      <div class="closed-pnl-split">
+        <div><div class="split-label">Realized</div><div class="split-val ${moneyClass(s.total_pnl)}">${fmtMoney(s.total_pnl)}</div></div>
+        <div><div class="split-label">Unrealized</div><div class="split-val" style="color:rgba(255,255,255,0.35); font-style:italic; font-size:0.72rem;">No live feed</div></div>
+      </div>
+    </div>
+  `;
+
+  const wr = s.win_rate !== null ? s.win_rate : 0;
+  renderGauge('gauge-winrate', wr, 0, 100, [
+    {from:0, to:0.4, color:'#E0555A'},
+    {from:0.4, to:0.6, color:'#D4AF37'},
+    {from:0.6, to:1, color:'#2FBF71'},
+  ], s.win_rate !== null ? s.win_rate + '%' : 'N/A');
+
+  const avgPnl = b.avgTradePnl;
+  const maxAbs = Math.max(50, Math.abs(avgPnl) * 1.6);
+  renderGauge('gauge-avgpnl', avgPnl, -maxAbs, maxAbs, [
+    {from:0, to:0.45, color:'#E0555A'},
+    {from:0.45, to:0.55, color:'#D4AF37'},
+    {from:0.55, to:1, color:'#2FBF71'},
+  ], fmtMoney(avgPnl));
+
+  const pfNull = s.profit_factor === null;
+  const pf = pfNull ? 3 : Math.min(s.profit_factor, 3);
+  renderGauge('gauge-pf', pf, 0, 3, [
+    {from:0, to:0.333, color:'#E0555A'},
+    {from:0.333, to:0.5, color:'#D4AF37'},
+    {from:0.5, to:1, color:'#2FBF71'},
+  ], pfNull ? 'N/A' : s.profit_factor.toFixed(2));
+}
+
+function renderAggregatePnl(){
+  const cal = STATE.calendar || {};
+  const days = Object.keys(cal).sort();
+  const svg = document.getElementById('agg-pnl-chart');
+  if(days.length === 0){ svg.innerHTML = ''; return; }
+  const W = 600, H = 220, PAD = 24;
+  const vals = days.map(d => cal[d].pnl);
+  const maxAbs = Math.max(...vals.map(v => Math.abs(v)), 1);
+  const zeroY = H / 2;
+  const step = (W - PAD*2) / days.length;
+  const barW = Math.max(2, step * 0.65);
+  const bars = days.map((d, i) => {
+    const v = cal[d].pnl;
+    const barH = Math.abs(v) / maxAbs * (H/2 - PAD*0.6);
+    const x = PAD + i*step + (step - barW)/2;
+    const y = v >= 0 ? zeroY - barH : zeroY;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${v >= 0 ? '#2FBF71' : '#E0555A'}" rx="2"/>`;
+  }).join('');
+  const firstLabel = new Date(days[0]+'T00:00:00').toLocaleDateString('default',{month:'short',day:'numeric'});
+  const lastLabel = new Date(days[days.length-1]+'T00:00:00').toLocaleDateString('default',{month:'short',day:'numeric'});
+  svg.innerHTML = `
+    <line x1="${PAD}" y1="${zeroY}" x2="${W-PAD}" y2="${zeroY}" stroke="rgba(255,255,255,0.15)"/>
+    ${bars}
+    <text x="${PAD}" y="${H-6}" fill="rgba(255,255,255,0.4)" font-size="10">${firstLabel}</text>
+    <text x="${W-PAD}" y="${H-6}" fill="rgba(255,255,255,0.4)" font-size="10" text-anchor="end">${lastLabel}</text>
+  `;
+}
+
 function renderEquityCurve(){
   const curve = STATE.equity_curve;
   const svg = document.getElementById('equity-chart');
-  if(curve.length === 0){ svg.innerHTML = ''; return; }
-  const W = 600, H = 260, PAD = 20;
+  const totalEl = document.getElementById('eq-total');
+  if(curve.length === 0){ svg.innerHTML = ''; if(totalEl) totalEl.textContent = ''; return; }
+  const W = 600, H = 260, PAD = 24;
   const vals = curve.map(p => p.cum_pnl);
   const min = Math.min(0, ...vals), max = Math.max(0, ...vals);
   const range = (max - min) || 1;
   const stepX = (W - PAD*2) / Math.max(1, curve.length - 1);
   const x = i => PAD + i * stepX;
-  const y = v => H - PAD - ((v - min) / range) * (H - PAD*2);
+  const y = v => H - PAD - ((v - min) / range) * (H - PAD*2 - 16);
 
   let path = curve.map((p,i) => `${i===0?'M':'L'} ${x(i).toFixed(1)} ${y(p.cum_pnl).toFixed(1)}`).join(' ');
   const zeroY = y(0).toFixed(1);
   const areaPath = path + ` L ${x(curve.length-1).toFixed(1)} ${zeroY} L ${x(0).toFixed(1)} ${zeroY} Z`;
+  const firstLabel = new Date(curve[0].date+'T00:00:00').toLocaleDateString('default',{month:'short',day:'numeric'});
+  const lastLabel = new Date(curve[curve.length-1].date+'T00:00:00').toLocaleDateString('default',{month:'short',day:'numeric'});
 
   svg.innerHTML = `
     <defs>
@@ -444,6 +626,39 @@ function renderEquityCurve(){
     <line x1="${PAD}" y1="${zeroY}" x2="${W-PAD}" y2="${zeroY}" stroke="rgba(255,255,255,0.15)" stroke-dasharray="4,4"/>
     <path d="${areaPath}" fill="url(#eqfill)" stroke="none"/>
     <path d="${path}" fill="none" stroke="#D4AF37" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <text x="${PAD}" y="${H-6}" fill="rgba(255,255,255,0.4)" font-size="10">${firstLabel}</text>
+    <text x="${W-PAD}" y="${H-6}" fill="rgba(255,255,255,0.4)" font-size="10" text-anchor="end">${lastLabel}</text>
+  `;
+  if(totalEl) totalEl.innerHTML = fmtMoney(vals[vals.length-1]);
+}
+
+function renderCumulativeAvg(){
+  const trades = [...(STATE.trades || [])].sort((a,b) => a.close_time.localeCompare(b.close_time));
+  const svg = document.getElementById('cumavg-chart');
+  if(trades.length === 0){ svg.innerHTML = ''; return; }
+  let running = 0;
+  const pts = trades.map((t,i) => { running += t.pnl; return running / (i+1); });
+  const W = 600, H = 220, PAD = 20;
+  const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
+  const range = (max - min) || 1;
+  const stepX = (W - PAD*2) / Math.max(1, pts.length - 1);
+  const x = i => PAD + i * stepX;
+  const y = v => H - PAD - ((v - min) / range) * (H - PAD*2);
+  let path = pts.map((v,i) => `${i===0?'M':'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const zeroY = y(0).toFixed(1);
+  const areaPath = path + ` L ${x(pts.length-1).toFixed(1)} ${zeroY} L ${x(0).toFixed(1)} ${zeroY} Z`;
+  const last = pts[pts.length - 1];
+  const lineColor = last >= 0 ? '#2FBF71' : '#E0555A';
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="cavgfill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <line x1="${PAD}" y1="${zeroY}" x2="${W-PAD}" y2="${zeroY}" stroke="rgba(255,255,255,0.15)" stroke-dasharray="4,4"/>
+    <path d="${areaPath}" fill="url(#cavgfill)" stroke="none"/>
+    <path d="${path}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
   `;
 }
 
@@ -654,27 +869,38 @@ function renderCalendarMonth(month){
   const firstWeekday = new Date(year, mo - 1, 1).getDay(); // 0=Sun
   const daysInMonth = new Date(year, mo, 0).getDate();
 
-  let html = '<div class="cal-grid">';
-  for(let i = 0; i < firstWeekday; i++){
-    html += '<div class="cal-day pad"></div>';
-  }
+  const cells = [];
+  for(let i = 0; i < firstWeekday; i++) cells.push(null);
+  for(let day = 1; day <= daysInMonth; day++) cells.push(day);
+  while(cells.length % 7 !== 0) cells.push(null);
+
   let monthPnl = 0, tradedDays = 0, tradeCount = 0;
-  for(let day = 1; day <= daysInMonth; day++){
-    const dateStr = `${year}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const v = cal[dateStr];
-    if(v){
-      monthPnl += v.pnl; tradedDays++; tradeCount += v.count;
-      const bg = v.pnl > 0 ? 'rgba(47,191,113,0.18)' : (v.pnl < 0 ? 'rgba(224,85,90,0.18)' : 'rgba(255,255,255,0.04)');
-      html += `<div class="cal-day" style="background:${bg}">
-        <div class="d">${day}</div>
-        <div class="p ${moneyClass(v.pnl)}">${fmtMoney(v.pnl)}</div>
-        <div class="n">${v.count} trade${v.count === 1 ? '' : 's'}</div>
-      </div>`;
-    } else {
-      html += `<div class="cal-day no-trade"><div class="d">${day}</div></div>`;
-    }
+  let html = '';
+  for(let w = 0; w < cells.length / 7; w++){
+    const weekCells = cells.slice(w*7, w*7 + 7);
+    let weekPnl = 0, weekWins = 0, weekLosses = 0, weekHasTrade = false;
+    const rowHtml = weekCells.map(day => {
+      if(day === null) return '<div class="cal-day pad"></div>';
+      const dateStr = `${year}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const v = cal[dateStr];
+      if(v){
+        monthPnl += v.pnl; tradedDays++; tradeCount += v.count;
+        weekPnl += v.pnl; weekHasTrade = true;
+        if(v.pnl > 0) weekWins++; else if(v.pnl < 0) weekLosses++;
+        const bg = v.pnl > 0 ? 'rgba(47,191,113,0.18)' : (v.pnl < 0 ? 'rgba(224,85,90,0.18)' : 'rgba(255,255,255,0.04)');
+        return `<div class="cal-day" style="background:${bg}">
+          <div class="d">${day}</div>
+          <div class="p ${moneyClass(v.pnl)}">${fmtMoney(v.pnl)}</div>
+          <div class="n">${v.count} trade${v.count === 1 ? '' : 's'}</div>
+        </div>`;
+      }
+      return `<div class="cal-day no-trade"><div class="d">${day}</div></div>`;
+    }).join('');
+    const totalCell = weekHasTrade
+      ? `<div class="cal-week-total"><div class="wl"><span class="w">W${weekWins}</span><span class="l">L${weekLosses}</span></div><div class="amt ${moneyClass(weekPnl)}">${fmtMoney(weekPnl)}</div></div>`
+      : `<div class="cal-week-total" style="opacity:0.3;"><div class="amt">&ndash;</div></div>`;
+    html += `<div class="cal-week">${rowHtml}${totalCell}</div>`;
   }
-  html += '</div>';
   el.innerHTML = html;
 
   summaryEl.textContent = tradedDays > 0
