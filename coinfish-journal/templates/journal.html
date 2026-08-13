@@ -48,7 +48,7 @@ nav.tabs button:hover{color:var(--teal-bright);}
 .stat-card{
   background:var(--navy-800); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px 18px;
 }
-.stat-card .label{font-family:var(--f-head); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.1em; color:rgba(255,255,255,0.5); margin-bottom:6px;}
+.stat-card .label{font-family:var(--f-head); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.1em; color:rgba(255,255,255,0.5); margin-bottom:6px; min-height:2.5em; display:flex; align-items:flex-start;}
 .stat-card .value{font-family:var(--f-head); font-size:1.55rem; font-weight:600;}
 .stat-card .value.pos{color:var(--win);}
 .stat-card .value.neg{color:var(--loss);}
@@ -193,12 +193,26 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .gauge-side .be{color:rgba(255,255,255,0.5);}
 .closed-pnl-card{justify-content:center;}
 .closed-pnl-gross{font-family:var(--f-head); font-weight:700; font-size:1.7rem; margin:10px 0 14px;}
+.closed-pnl-gross.pos{color:var(--win);}
+.closed-pnl-gross.neg{color:var(--loss);}
 .closed-pnl-split{display:flex; gap:10px; width:100%;}
 .closed-pnl-split > div{flex:1; background:rgba(255,255,255,0.04); border-radius:10px; padding:9px 10px;}
 .closed-pnl-split .split-label{font-size:0.62rem; text-transform:uppercase; letter-spacing:0.08em; color:rgba(255,255,255,0.4);}
 .closed-pnl-split .split-val{font-family:var(--f-head); font-weight:700; font-size:0.92rem; margin-top:3px;}
 .chart-total{font-family:var(--f-head); font-weight:600; font-size:0.8rem; color:rgba(255,255,255,0.55); margin-left:auto;}
 #agg-pnl-chart, #cumavg-chart{width:100%; height:220px;}
+
+.cal-panel{max-width:620px;}
+.cal-panel .cal-weekdays div{font-size:0.58rem; padding:1px 0;}
+.cal-panel .cal-day{font-size:0.56rem; padding:3px;}
+.cal-panel .cal-day .d{font-size:0.5rem;}
+.cal-panel .cal-day .p{font-size:0.6rem; margin-top:1px;}
+.cal-panel .cal-day .n{font-size:0.46rem;}
+.cal-panel .cal-week-total{padding:2px;}
+.cal-panel .cal-week-total .wl{font-size:0.48rem;}
+.cal-panel .cal-week-total .amt{font-size:0.66rem; margin-top:1px;}
+.cal-panel .cal-week{gap:4px; margin-bottom:4px;}
+.cal-panel .cal-weekdays{gap:4px;}
 </style>
 </head>
 <body>
@@ -258,7 +272,7 @@ tr:hover td{background:rgba(255,255,255,0.02);}
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel cal-panel">
       <h3>Calendar</h3>
       <div class="cal-controls">
         <button class="cal-nav-btn" id="cal-prev">&larr;</button>
@@ -597,24 +611,46 @@ function renderAggregatePnl(){
   `;
 }
 
+function fmtAxis(v){
+  const abs = Math.abs(v);
+  if(abs >= 1000){ return (v < 0 ? '-$' : '$') + (abs/1000).toFixed(1) + 'K'; }
+  return (v < 0 ? '-$' : '$') + Math.round(abs);
+}
+
 function renderEquityCurve(){
   const curve = STATE.equity_curve;
   const svg = document.getElementById('equity-chart');
   const totalEl = document.getElementById('eq-total');
   if(curve.length === 0){ svg.innerHTML = ''; if(totalEl) totalEl.textContent = ''; return; }
-  const W = 600, H = 260, PAD = 24;
+  const W = 600, H = 260, PAD_L = 52, PAD_R = 14, PAD_T = 14, PAD_B = 26;
   const vals = curve.map(p => p.cum_pnl);
   const min = Math.min(0, ...vals), max = Math.max(0, ...vals);
   const range = (max - min) || 1;
-  const stepX = (W - PAD*2) / Math.max(1, curve.length - 1);
-  const x = i => PAD + i * stepX;
-  const y = v => H - PAD - ((v - min) / range) * (H - PAD*2 - 16);
+  const stepX = (W - PAD_L - PAD_R) / Math.max(1, curve.length - 1);
+  const x = i => PAD_L + i * stepX;
+  const y = v => H - PAD_B - ((v - min) / range) * (H - PAD_T - PAD_B);
 
   let path = curve.map((p,i) => `${i===0?'M':'L'} ${x(i).toFixed(1)} ${y(p.cum_pnl).toFixed(1)}`).join(' ');
   const zeroY = y(0).toFixed(1);
   const areaPath = path + ` L ${x(curve.length-1).toFixed(1)} ${zeroY} L ${x(0).toFixed(1)} ${zeroY} Z`;
-  const firstLabel = new Date(curve[0].date+'T00:00:00').toLocaleDateString('default',{month:'short',day:'numeric'});
-  const lastLabel = new Date(curve[curve.length-1].date+'T00:00:00').toLocaleDateString('default',{month:'short',day:'numeric'});
+
+  const tickCount = 4;
+  let yTicks = '';
+  for(let i=0; i<=tickCount; i++){
+    const v = min + (range * i / tickCount);
+    const ty = y(v);
+    yTicks += `<line x1="${PAD_L}" y1="${ty.toFixed(1)}" x2="${W-PAD_R}" y2="${ty.toFixed(1)}" stroke="rgba(255,255,255,0.07)"/>`;
+    yTicks += `<text x="${PAD_L-8}" y="${(ty+3).toFixed(1)}" fill="rgba(255,255,255,0.45)" font-size="9.5" text-anchor="end">${fmtAxis(v)}</text>`;
+  }
+
+  const labelCount = Math.min(6, curve.length);
+  let xLabels = '';
+  for(let i=0; i<labelCount; i++){
+    const idx = Math.round(i * (curve.length - 1) / (labelCount - 1 || 1));
+    const lbl = new Date(curve[idx].date+'T00:00:00').toLocaleDateString('default',{month:'short',day:'numeric'});
+    const anchor = i === 0 ? 'start' : (i === labelCount-1 ? 'end' : 'middle');
+    xLabels += `<text x="${x(idx).toFixed(1)}" y="${H-6}" fill="rgba(255,255,255,0.4)" font-size="10" text-anchor="${anchor}">${lbl}</text>`;
+  }
 
   svg.innerHTML = `
     <defs>
@@ -623,11 +659,11 @@ function renderEquityCurve(){
         <stop offset="100%" stop-color="#25C5D4" stop-opacity="0"/>
       </linearGradient>
     </defs>
-    <line x1="${PAD}" y1="${zeroY}" x2="${W-PAD}" y2="${zeroY}" stroke="rgba(255,255,255,0.15)" stroke-dasharray="4,4"/>
+    ${yTicks}
+    <line x1="${PAD_L}" y1="${zeroY}" x2="${W-PAD_R}" y2="${zeroY}" stroke="rgba(255,255,255,0.2)" stroke-dasharray="4,4"/>
     <path d="${areaPath}" fill="url(#eqfill)" stroke="none"/>
     <path d="${path}" fill="none" stroke="#D4AF37" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-    <text x="${PAD}" y="${H-6}" fill="rgba(255,255,255,0.4)" font-size="10">${firstLabel}</text>
-    <text x="${W-PAD}" y="${H-6}" fill="rgba(255,255,255,0.4)" font-size="10" text-anchor="end">${lastLabel}</text>
+    ${xLabels}
   `;
   if(totalEl) totalEl.innerHTML = fmtMoney(vals[vals.length-1]);
 }
