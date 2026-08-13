@@ -187,6 +187,8 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .gauge-wrap{position:relative; width:150px; height:92px; margin:4px auto 0;}
 .gauge-wrap svg{width:100%; height:100%; display:block;}
 .gauge-readout{position:absolute; left:0; right:0; bottom:2px; text-align:center; font-family:var(--f-head); font-weight:700; font-size:1.2rem;}
+.gauge-readout.pos{color:var(--win);}
+.gauge-readout.neg{color:var(--loss);}
 .gauge-side{display:flex; justify-content:center; gap:14px; width:100%; margin-top:12px; font-size:0.74rem; font-family:var(--f-head); font-weight:600;}
 .gauge-side .w{color:var(--win);}
 .gauge-side .l{color:var(--loss);}
@@ -202,7 +204,6 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .chart-total{font-family:var(--f-head); font-weight:600; font-size:0.8rem; color:rgba(255,255,255,0.55); margin-left:auto;}
 #agg-pnl-chart, #cumavg-chart{width:100%; height:220px;}
 
-.cal-panel{max-width:620px;}
 .cal-panel .cal-weekdays div{font-size:0.58rem; padding:1px 0;}
 .cal-panel .cal-day{font-size:0.56rem; padding:3px;}
 .cal-panel .cal-day .d{font-size:0.5rem;}
@@ -213,6 +214,21 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .cal-panel .cal-week-total .amt{font-size:0.66rem; margin-top:1px;}
 .cal-panel .cal-week{gap:4px; margin-bottom:4px;}
 .cal-panel .cal-weekdays{gap:4px;}
+
+.breakdown-tabs{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;}
+.bd-tab{
+  background:var(--navy-700); border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.6);
+  font-family:var(--f-head); font-weight:600; font-size:0.72rem; padding:6px 13px; border-radius:100px; cursor:pointer;
+}
+.bd-tab:hover{border-color:var(--teal-bright); color:var(--teal-bright);}
+.bd-tab.active{background:var(--teal); border-color:var(--teal-bright); color:var(--white);}
+.breakdown-panel table{font-size:0.76rem;}
+.breakdown-panel th, .breakdown-panel td{padding:6px 8px;}
+#breakdown-body{max-height:420px; overflow-y:auto;}
+.money-badge{display:inline-block; padding:2px 10px; border-radius:6px; font-family:var(--f-head); font-weight:700; font-size:0.78rem; border:1px solid;}
+.money-badge.pos{color:var(--win); border-color:rgba(47,191,113,0.4); background:rgba(47,191,113,0.08);}
+.money-badge.neg{color:var(--loss); border-color:rgba(224,85,90,0.4); background:rgba(224,85,90,0.08);}
+.money-badge.zero{color:rgba(255,255,255,0.5); border-color:rgba(255,255,255,0.15); background:rgba(255,255,255,0.03);}
 </style>
 </head>
 <body>
@@ -272,18 +288,30 @@ tr:hover td{background:rgba(255,255,255,0.02);}
       </div>
     </div>
 
-    <div class="panel cal-panel">
-      <h3>Calendar</h3>
-      <div class="cal-controls">
-        <button class="cal-nav-btn" id="cal-prev">&larr;</button>
-        <select id="cal-month-select"></select>
-        <button class="cal-nav-btn" id="cal-next">&rarr;</button>
-        <div class="cal-month-summary" id="cal-month-summary"></div>
+    <div class="two-col">
+      <div class="panel cal-panel">
+        <h3>Calendar</h3>
+        <div class="cal-controls">
+          <button class="cal-nav-btn" id="cal-prev">&larr;</button>
+          <select id="cal-month-select"></select>
+          <button class="cal-nav-btn" id="cal-next">&rarr;</button>
+          <div class="cal-month-summary" id="cal-month-summary"></div>
+        </div>
+        <div class="cal-weekdays">
+          <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Total</div>
+        </div>
+        <div id="calendar-body"></div>
       </div>
-      <div class="cal-weekdays">
-        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Total</div>
+      <div class="panel breakdown-panel">
+        <h3>Breakdown</h3>
+        <div class="breakdown-tabs">
+          <button class="bd-tab active" data-bd="trades">Trades</button>
+          <button class="bd-tab" data-bd="symbol">Symbol</button>
+          <button class="bd-tab" data-bd="day">Day</button>
+          <button class="bd-tab" data-bd="open">Open</button>
+        </div>
+        <div id="breakdown-body"></div>
       </div>
-      <div id="calendar-body"></div>
     </div>
 
     <div class="two-col">
@@ -430,6 +458,7 @@ function renderAll(){
   populateFilters();
   renderLog();
   renderCalendar();
+  renderBreakdown();
   renderEntries();
 }
 
@@ -500,7 +529,7 @@ function gaugeArcPath(cx, cy, r, f0, f1){
   return `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
 }
 
-function renderGauge(containerId, value, min, max, zones, valueLabel){
+function renderGauge(containerId, value, min, max, zones, valueLabel, readoutClass){
   const el = document.getElementById(containerId);
   if(!el) return;
   const cx = 100, cy = 80, r = 72, trackWidth = 14;
@@ -513,7 +542,7 @@ function renderGauge(containerId, value, min, max, zones, valueLabel){
       <line x1="${cx}" y1="${cy}" x2="${needleP.x.toFixed(2)}" y2="${needleP.y.toFixed(2)}" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
       <circle cx="${cx}" cy="${cy}" r="6" fill="#fff"/>
     </svg>
-    <div class="gauge-readout">${valueLabel}</div>
+    <div class="gauge-readout ${readoutClass || ''}">${valueLabel}</div>
   `;
 }
 
@@ -572,7 +601,7 @@ function renderScoreRow(){
     {from:0, to:0.45, color:'#E0555A'},
     {from:0.45, to:0.55, color:'#D4AF37'},
     {from:0.55, to:1, color:'#2FBF71'},
-  ], fmtMoney(avgPnl));
+  ], fmtMoney(avgPnl), moneyClass(avgPnl));
 
   const pfNull = s.profit_factor === null;
   const pf = pfNull ? 3 : Math.min(s.profit_factor, 3);
@@ -943,6 +972,127 @@ function renderCalendarMonth(month){
     ? `${fmtMoney(monthPnl)} across ${tradeCount} trade${tradeCount === 1 ? '' : 's'} on ${tradedDays} day${tradedDays === 1 ? '' : 's'}`
     : 'No trades this month';
 }
+
+let bdTab = 'trades';
+
+function moneyBadge(v){
+  const cls = v > 0 ? 'pos' : (v < 0 ? 'neg' : 'zero');
+  return `<span class="money-badge ${cls}">${fmtMoney(v)}</span>`;
+}
+
+function renderBreakdown(){
+  const body = document.getElementById('breakdown-body');
+  if(!body) return;
+  if(bdTab === 'trades') return renderBdTrades(body);
+  if(bdTab === 'symbol') return renderBdSymbol(body);
+  if(bdTab === 'day') return renderBdDay(body);
+  if(bdTab === 'open') return renderBdOpen(body);
+}
+
+function renderBdTrades(body){
+  const trades = [...(STATE.trades || [])].sort((a,b) => b.close_time.localeCompare(a.close_time));
+  if(trades.length === 0){ body.innerHTML = '<div class="empty">No trades yet</div>'; return; }
+  body.innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>Symbol</th><th>Strategy</th><th>P&amp;L</th></tr></thead>
+      <tbody>
+        ${trades.map(t => `
+          <tr>
+            <td>${t.close_time.slice(0,10)}</td>
+            <td><strong>${t.symbol}</strong></td>
+            <td>${t.strategy}</td>
+            <td>${moneyBadge(t.pnl)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderBdSymbol(body){
+  const rows = STATE.by_symbol || [];
+  if(rows.length === 0){ body.innerHTML = '<div class="empty">No data yet</div>'; return; }
+  body.innerHTML = `
+    <table>
+      <thead><tr><th>Symbol</th><th>P&amp;L</th><th>Trades</th><th>Win %</th></tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td><strong>${r.symbol}</strong></td>
+            <td>${moneyBadge(r.pnl)}</td>
+            <td>${r.count}</td>
+            <td>${r.win_rate !== null ? r.win_rate + '%' : 'N/A'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderBdDay(body){
+  const trades = STATE.trades || [];
+  const byDay = {};
+  trades.forEach(t => {
+    const d = t.close_time.slice(0,10);
+    if(!byDay[d]) byDay[d] = {pnl:0, wins:0, losses:0, count:0};
+    byDay[d].pnl += t.pnl;
+    byDay[d].count++;
+    if(t.result === 'win') byDay[d].wins++;
+    else if(t.result === 'loss') byDay[d].losses++;
+  });
+  const days = Object.keys(byDay).sort().reverse();
+  if(days.length === 0){ body.innerHTML = '<div class="empty">No trades yet</div>'; return; }
+  body.innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>P&amp;L</th><th>Wins</th><th>Losses</th><th>Win %</th></tr></thead>
+      <tbody>
+        ${days.map(d => {
+          const v = byDay[d];
+          const wr = v.count ? Math.round(v.wins / v.count * 100) : 0;
+          return `
+            <tr>
+              <td>${d}</td>
+              <td>${moneyBadge(v.pnl)}</td>
+              <td>${v.wins}</td>
+              <td>${v.losses}</td>
+              <td>${wr}%</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderBdOpen(body){
+  const rows = STATE.open_positions || [];
+  if(rows.length === 0){ body.innerHTML = '<div class="empty">No open positions</div>'; return; }
+  body.innerHTML = `
+    <table>
+      <thead><tr><th>Symbol</th><th>Strategy</th><th>Size</th><th>Opened</th><th>Credit</th></tr></thead>
+      <tbody>
+        ${rows.map(p => `
+          <tr>
+            <td><strong>${p.symbol}</strong></td>
+            <td>${p.strategy}</td>
+            <td>${p.size}</td>
+            <td>${p.open_time.slice(0,10)}</td>
+            <td>${fmtMoney(p.net_premium_open)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+document.querySelectorAll('.bd-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.bd-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    bdTab = btn.dataset.bd;
+    renderBreakdown();
+  });
+});
 
 document.getElementById('cal-month-select').addEventListener('change', (e) => {
   calSelectedMonth = e.target.value;
