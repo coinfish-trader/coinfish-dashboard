@@ -184,13 +184,26 @@ def api_update_trade(trade_key):
 
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    """Re-run the importer against the current seed file. Real live refresh
-    requires a fresh IBKR pull saved to data/raw_trades_seed.json first (see
-    README) since this Flask process can't call the IBKR MCP tools itself."""
+    """Re-run the importers against whatever source files are on disk. IBKR
+    refresh requires a fresh pull saved to data/raw_trades_seed.json first
+    (see README) since this Flask process can't call the IBKR MCP tools
+    itself. TastyTrade refresh is picked up automatically if a transaction
+    CSV export has been placed at data/tastytrade_transactions.csv - re-drop
+    a fresh export there any time to pull in new trades."""
     import pairing
-    path = os.path.join(os.path.dirname(__file__), "data", "raw_trades_seed.json")
-    round_trips, open_positions = pairing.process(path)
-    db.replace_trades(round_trips, open_positions, path)
+    ibkr_path = os.path.join(os.path.dirname(__file__), "data", "raw_trades_seed.json")
+    round_trips, open_positions = pairing.process(ibkr_path)
+    source_label = ibkr_path
+
+    tt_path = os.path.join(os.path.dirname(__file__), "data", "tastytrade_transactions.csv")
+    if os.path.exists(tt_path):
+        import tastytrade_pairing
+        tt_round_trips, tt_open_positions = tastytrade_pairing.process(tt_path)
+        round_trips += tt_round_trips
+        open_positions += tt_open_positions
+        source_label += " + tastytrade_transactions.csv"
+
+    db.replace_trades(round_trips, open_positions, source_label)
     return jsonify({"ok": True, "count": len(round_trips), "open_count": len(open_positions)})
 
 
