@@ -81,6 +81,9 @@ tr:hover td{background:rgba(255,255,255,0.02);}
 .pill.win{background:rgba(47,191,113,0.18); color:var(--win);}
 .pill.loss{background:rgba(224,85,90,0.18); color:var(--loss);}
 .pill.breakeven{background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.6);}
+.source-pill{display:inline-block; padding:2px 9px; border-radius:100px; font-size:0.68rem; font-weight:600; font-family:var(--f-head);}
+.source-pill.ibkr{background:rgba(212,175,55,0.15); color:var(--gold-bright);}
+.source-pill.tastytrade{background:rgba(37,197,212,0.15); color:var(--teal-bright);}
 .pnl-pos{color:var(--win); font-weight:600;}
 .pnl-neg{color:var(--loss); font-weight:600;}
 
@@ -351,6 +354,7 @@ tr:hover td{background:rgba(255,255,255,0.02);}
             <th data-sort="pnl">P&amp;L</th>
             <th data-sort="pct_return_on_credit">Return on Credit</th>
             <th data-sort="result">Result</th>
+            <th data-sort="source">Source</th>
             <th>Entry Log</th>
             <th>Notes / Tags</th>
           </tr>
@@ -802,7 +806,7 @@ function findLinkedEntry(tradeKey){
 function renderLog(){
   const rows = getFilteredSorted();
   const tbody = document.querySelector('#log-table tbody');
-  if(rows.length === 0){ tbody.innerHTML = '<tr><td colspan="10" class="empty">No trades match those filters</td></tr>'; return; }
+  if(rows.length === 0){ tbody.innerHTML = '<tr><td colspan="11" class="empty">No trades match those filters</td></tr>'; return; }
   tbody.innerHTML = rows.map(t => {
     const entry = findLinkedEntry(t.trade_key);
     const journalCell = entry
@@ -818,6 +822,7 @@ function renderLog(){
       <td class="${moneyClass(t.pnl)}">${fmtMoney(t.pnl)}</td>
       <td>${t.pct_return_on_credit !== null ? t.pct_return_on_credit + '%' : 'N/A'}</td>
       <td><span class="pill ${t.result}">${t.result}</span></td>
+      <td><span class="source-pill ${t.source || 'ibkr'}">${t.source === 'tastytrade' ? 'TastyTrade' : 'IBKR'}</span></td>
       <td>${journalCell}</td>
       <td class="notes-cell">
         <textarea data-key="${t.trade_key}" data-field="notes" placeholder="Notes...">${t.notes || ''}</textarea>
@@ -856,7 +861,7 @@ function toggleEntryDetail(btn, tradeKey){
   if(!e) return;
   const tr = document.createElement('tr');
   tr.className = 'entry-detail-row';
-  tr.innerHTML = `<td colspan="10">${entryChecklistHtml(e)}</td>`;
+  tr.innerHTML = `<td colspan="11">${entryChecklistHtml(e)}</td>`;
   row.after(tr);
 }
 
