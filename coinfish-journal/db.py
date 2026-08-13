@@ -32,7 +32,8 @@ def init_db():
         commission_total REAL,
         pnl_after_commission REAL,
         pct_return_on_credit REAL,
-        result TEXT
+        result TEXT,
+        source TEXT DEFAULT 'ibkr'
     );
 
     CREATE TABLE IF NOT EXISTS open_positions (
@@ -89,6 +90,13 @@ def init_db():
         created_at TEXT
     );
     """)
+    # Migration: older databases (deployed before the tastytrade importer)
+    # won't have this column yet. Safe to run every startup - SQLite raises
+    # "duplicate column" if it's already there, which we just swallow.
+    try:
+        conn.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'ibkr'")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -105,12 +113,13 @@ def replace_trades(round_trips, open_positions, source_file):
             INSERT OR REPLACE INTO trades
             (trade_key, symbol, company_name, strategy, leg_count, size, open_time,
              close_time, net_premium_open, pnl, commission_total, pnl_after_commission,
-             pct_return_on_credit, result)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             pct_return_on_credit, result, source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             t["trade_key"], t["symbol"], t["company_name"], t["strategy"], t["leg_count"],
             t["size"], t["open_time"], t["close_time"], t["net_premium_open"], t["pnl"],
-            t["commission_total"], t["pnl_after_commission"], t["pct_return_on_credit"], t["result"]
+            t["commission_total"], t["pnl_after_commission"], t["pct_return_on_credit"], t["result"],
+            t.get("source", "ibkr")
         ))
         cur.execute("""
             INSERT OR IGNORE INTO trade_meta (trade_key, notes, tags, mistake_flag, updated_at)
