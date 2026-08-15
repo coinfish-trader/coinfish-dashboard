@@ -72,6 +72,8 @@
     white-space: nowrap;
   }
   header .brand span.gold { color: var(--gold-bright); }
+  body.light-theme .logo-dark { display: none !important; }
+  body.light-theme .logo-light { display: block !important; }
   header .status { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   header .status.live::before {
     content: "";
@@ -1118,7 +1120,7 @@
 <body>
 
 <header>
-  <div class="brand">Coin<span class="gold">fish</span> Newsfeed</div>
+  <div class="brand" style="display:flex;align-items:center;gap:8px;"><img src="/coinfish-lockup-white.png" alt="Coinfish" class="logo-dark" style="height:26px;width:auto;display:block;"><img src="/coinfish-lockup-navy.png" alt="Coinfish" class="logo-light" style="height:26px;width:auto;display:none;"><span>Newsfeed</span></div>
   <div class="search-wrap">
     <input class="search-input" id="searchInput" type="text" placeholder="Search tickers or keywords…" autocomplete="off">
     <button class="search-clear" id="searchClear">✕</button>
