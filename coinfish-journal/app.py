@@ -2,12 +2,20 @@ import os
 import json
 import datetime
 from collections import defaultdict
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_from_directory
 
 import db
 
 app = Flask(__name__)
 db.init_db()
+
+# Favicon files (Coinfish logo) served directly - kept out of templates/
+# and out of Flask's static folder so only these four files are exposed,
+# not the rest of this directory (db.py, the trades database, raw data).
+app.add_url_rule("/favicon.ico", "favicon_ico", lambda: send_from_directory(os.path.dirname(__file__), "favicon.ico", mimetype="image/vnd.microsoft.icon"))
+app.add_url_rule("/favicon-16x16.png", "favicon_16", lambda: send_from_directory(os.path.dirname(__file__), "favicon-16x16.png", mimetype="image/png"))
+app.add_url_rule("/favicon-32x32.png", "favicon_32", lambda: send_from_directory(os.path.dirname(__file__), "favicon-32x32.png", mimetype="image/png"))
+app.add_url_rule("/apple-touch-icon.png", "apple_touch_icon", lambda: send_from_directory(os.path.dirname(__file__), "apple-touch-icon.png", mimetype="image/png"))
 
 
 def compute_stats(trades):
