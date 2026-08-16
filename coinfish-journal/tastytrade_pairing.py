@@ -16,6 +16,18 @@ underlying + strike + expiry + right), then the matched leg-pairs are
 re-grouped by their *opening* Order # to reconstruct the trade the way a
 trader thinks about it - one row per strategy, even if it closed piecemeal.
 
+QUANTITY-AWARE MATCHING (fixed 2026-08-16): a single order can fill across
+multiple partial executions, each its own CSV row at the same key (e.g. HAL
+2026-03-03, order 443714714, filled as two separate 1-lot executions per
+leg instead of one 2-lot execution). The open side and close side don't
+have to split the same way - HAL's two closes were each a single 2-lot row.
+The original version matched leg RECORDS 1-for-1 regardless of quantity,
+which left one of the two 1-lot opens stranded as a phantom "still open"
+position even though the position was fully closed 2026-03-25. Matching is
+now size-aware (same FIFO-with-remaining-quantity pattern pairing.py already
+uses for IBKR), splitting/prorating value, commission, and fees by the
+fraction of a row's quantity actually consumed by each match.
+
 "Symbol Change" and "Reverse Split" rows are corporate-action bookkeeping
 (e.g. HON1/HON2 renames seen mid-2026) - each one nets to exactly zero cash
 and has no Order #, so they're dropped entirely rather than handled as real
@@ -78,48 +90,95 @@ def parse_legs(rows):
 
 
 def match_legs(legs):
-    """FIFO-match each open leg to the next close leg sharing the same
-    (underlying, strike, expiry, right) key."""
-    open_queues = defaultdict(list)
-    closed_pairs = []
+    """FIFO-match open legs to close legs sharing the same (underlying,
+    strike, expiry, right) key, quantity-aware: a row's quantity is tracked
+    as "remaining" and can be split across multiple matches on either side,
+    so partial-fill records (same order, multiple executions) reconcile
+    correctly against a close that settles in a different split. Returns a
+    list of (open_leg, close_leg, qty) triples - qty is the amount actually
+    matched by that pair, which may be less than either leg's full row
+    quantity, and the caller must prorate value/commission/fees by qty /
+    leg["quantity"] rather than assuming the full row applies."""
+    open_queues = defaultdict(list)  # key -> list of {"leg": leg, "remaining": int}
+    matched = []  # (open_leg, close_leg, qty)
+    orphaned = []  # (None, close_leg, qty) - close with no open in this data window
+
     for leg in legs:
         if leg["is_open"]:
-            open_queues[leg["key"]].append(leg)
-        else:
-            q = open_queues[leg["key"]]
-            if q:
-                closed_pairs.append((q.pop(0), leg))
-            else:
-                closed_pairs.append((None, leg))
+            open_queues[leg["key"]].append({"leg": leg, "remaining": leg["quantity"]})
+            continue
 
-    still_open = [leg for q in open_queues.values() for leg in q]
-    return closed_pairs, still_open
+        remaining_to_close = leg["quantity"]
+        q = open_queues[leg["key"]]
+        while remaining_to_close > 0 and q:
+            lot = q[0]
+            take = min(lot["remaining"], remaining_to_close)
+            matched.append((lot["leg"], leg, take))
+            lot["remaining"] -= take
+            remaining_to_close -= take
+            if lot["remaining"] <= 0:
+                q.pop(0)
+
+        if remaining_to_close > 0:
+            orphaned.append((None, leg, remaining_to_close))
+
+    still_open = []
+    for key, q in open_queues.items():
+        for lot in q:
+            if lot["remaining"] > 0:
+                leg = lot["leg"]
+                frac = lot["remaining"] / leg["quantity"] if leg["quantity"] else 0
+                still_open.append({
+                    **leg,
+                    "quantity": lot["remaining"],
+                    "value": round(leg["value"] * frac, 4),
+                    "commission": round(leg["commission"] * frac, 4),
+                    "fees": round(leg["fees"] * frac, 4),
+                })
+
+    return matched, orphaned, still_open
+
+
+def _leg_frac_value(leg, qty):
+    """Prorated (value, commission+fees) for `qty` of a leg's full row quantity."""
+    frac = qty / leg["quantity"] if leg["quantity"] else 0
+    return leg["value"] * frac, (leg["commission"] + leg["fees"]) * frac
 
 
 def _group_pnl(pairs):
-    net_open = round(sum(p[0]["value"] for p in pairs), 4)
-    net_close = round(sum(p[1]["value"] for p in pairs), 4)
+    """pairs: list of (open_leg, close_leg, qty) triples, prorated per-pair."""
+    net_open = 0.0
+    net_close = 0.0
+    commission_total = 0.0
+    for open_leg, close_leg, qty in pairs:
+        ov, oc = _leg_frac_value(open_leg, qty)
+        cv, cc = _leg_frac_value(close_leg, qty)
+        net_open += ov
+        net_close += cv
+        commission_total += oc + cc
+    net_open = round(net_open, 4)
     pnl = round(net_open + net_close, 4)
-    commission_total = round(
-        sum(p[0]["commission"] + p[0]["fees"] + p[1]["commission"] + p[1]["fees"] for p in pairs), 4
-    )
+    commission_total = round(commission_total, 4)
     return net_open, pnl, commission_total
 
 
 def build_round_trips(matched_pairs):
     groups = defaultdict(list)
-    for open_leg, close_leg in matched_pairs:
+    for open_leg, close_leg, qty in matched_pairs:
         gkey = open_leg["order_id"] or (open_leg["underlying"], open_leg["date"])
-        groups[gkey].append((open_leg, close_leg))
+        groups[gkey].append((open_leg, close_leg, qty))
 
     round_trips = []
     for gkey, pairs in groups.items():
         underlying = pairs[0][0]["underlying"]
         open_time = min(p[0]["date"] for p in pairs)
         close_time = max(p[1]["date"] for p in pairs)
-        size = pairs[0][0]["quantity"]
-        leg_count = len(pairs)
+        first_key = pairs[0][0]["key"]
+        size = sum(qty for open_leg, _, qty in pairs if open_leg["key"] == first_key)
+        leg_count = len({p[0]["key"] for p in pairs})
         net_open, pnl, commission_total = _group_pnl(pairs)
+        # net_open sign convention (SELL credit / BUY debit) already lives in
+        # each leg's "value" field, same as pairing.py's per-unit premium.
         strategy = strategy_label(leg_count, net_open)
 
         pct_return_on_credit = None
@@ -142,7 +201,10 @@ def build_round_trips(matched_pairs):
             "net_premium_open": net_open,
             "pnl": pnl,
             "commission_total": commission_total,
-            "pnl_after_commission": round(pnl - commission_total, 4),
+            # tastytrade's Commissions/Fees columns are already negative-signed
+            # costs (e.g. -1.00), unlike IBKR's positive-magnitude commission
+            # field that pairing.py subtracts - so here the cost is ADDED.
+            "pnl_after_commission": round(pnl + commission_total, 4),
             "pct_return_on_credit": pct_return_on_credit,
             "result": "win" if pnl > 0.005 else ("loss" if pnl < -0.005 else "breakeven"),
             "source": "tastytrade",
@@ -150,21 +212,28 @@ def build_round_trips(matched_pairs):
     return round_trips
 
 
-def build_orphan_trips(orphan_pairs):
+def build_orphan_trips(orphan_triples):
     """Closing legs with no matching open inside this CSV's date window
     (position was opened before the export's start date)."""
     groups = defaultdict(list)
-    for _, close_leg in orphan_pairs:
+    for _, close_leg, qty in orphan_triples:
         gkey = close_leg["order_id"] or (close_leg["underlying"], close_leg["date"])
-        groups[gkey].append(close_leg)
+        groups[gkey].append((close_leg, qty))
 
     trips = []
-    for gkey, legs in groups.items():
-        underlying = legs[0]["underlying"]
-        close_time = max(l["date"] for l in legs)
-        pnl = round(sum(l["value"] for l in legs), 4)
-        commission_total = round(sum(l["commission"] + l["fees"] for l in legs), 4)
-        leg_count = len(legs)
+    for gkey, items in groups.items():
+        underlying = items[0][0]["underlying"]
+        close_time = max(leg["date"] for leg, _ in items)
+        pnl = 0.0
+        commission_total = 0.0
+        for leg, qty in items:
+            v, c = _leg_frac_value(leg, qty)
+            pnl += v
+            commission_total += c
+        pnl = round(pnl, 4)
+        commission_total = round(commission_total, 4)
+        leg_count = len({leg["key"] for leg, _ in items})
+        size = items[0][1]
         strategy = strategy_label(leg_count, pnl) + " (opened before data window)"
 
         trade_key = hashlib.sha1(f"tt-orphan|{underlying}|{close_time}|{gkey}".encode()).hexdigest()[:16]
@@ -175,13 +244,13 @@ def build_orphan_trips(orphan_pairs):
             "company_name": underlying,
             "strategy": strategy,
             "leg_count": leg_count,
-            "size": legs[0]["quantity"],
+            "size": size,
             "open_time": None,
             "close_time": close_time,
             "net_premium_open": None,
             "pnl": pnl,
             "commission_total": commission_total,
-            "pnl_after_commission": round(pnl - commission_total, 4),
+            "pnl_after_commission": round(pnl + commission_total, 4),
             "pct_return_on_credit": None,
             "result": "win" if pnl > 0.005 else ("loss" if pnl < -0.005 else "breakeven"),
             "source": "tastytrade",
@@ -215,9 +284,7 @@ def build_open_positions(still_open_legs):
 def process(csv_path):
     rows = load_rows(csv_path)
     legs = parse_legs(rows)
-    closed_pairs, still_open_legs = match_legs(legs)
-    matched = [(o, c) for o, c in closed_pairs if o is not None]
-    orphaned = [(o, c) for o, c in closed_pairs if o is None]
+    matched, orphaned, still_open_legs = match_legs(legs)
 
     round_trips = build_round_trips(matched) + build_orphan_trips(orphaned)
     round_trips.sort(key=lambda t: t["close_time"])
