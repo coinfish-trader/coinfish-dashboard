@@ -1,56 +1,57 @@
-import re
-import json
 import time
 import threading
 import numpy as np
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import requests
-from bs4 import BeautifulSoup
 import yfinance as yf
 
-try:
-    from curl_cffi import requests as curl_requests
-    HAS_CURL_CFFI = True
-except ImportError:
-    HAS_CURL_CFFI = False
-
 WATCHLIST = [
-    "NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META", "AVGO", "CRM", "MU",
-    "BAC", "WFC", "C", "JPM", "MS", "SCHW", "AXP", "GS", "V", "MA", "PYPL",
-    "XOM", "CVX", "OXY", "COP",
-    "LLY", "ABBV", "JNJ", "MRK",
-    "WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD", "GM", "ABNB",
-    "BA", "GE", "UBER", "HON", "CAT",
+    # Technology (11)
+    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA",
+    # Financials (11)
+    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA",
+    # Energy (8)
+    "XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO",
+    # Healthcare (7)
+    "LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG",
+    # Consumer (9)
+    "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT",
+    # Industrials / Defense / Transportation (10)
+    "RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP",
 ]
 
 COMPANY_NAMES = {
     "NVDA": "NVIDIA Corp", "TSLA": "Tesla Inc", "AAPL": "Apple Inc",
     "AMD": "Advanced Micro Devices", "AMZN": "Amazon.com", "GOOGL": "Alphabet Inc",
     "NFLX": "Netflix Inc", "MSFT": "Microsoft Corp", "ORCL": "Oracle Corp",
-    "META": "Meta Platforms", "AVGO": "Broadcom Inc", "CRM": "Salesforce Inc",
-    "MU": "Micron Technology", "BAC": "Bank of America",
-    "WFC": "Wells Fargo", "C": "Citigroup Inc", "JPM": "JPMorgan Chase",
-    "MS": "Morgan Stanley", "SCHW": "Charles Schwab", "AXP": "American Express",
-    "GS": "Goldman Sachs", "V": "Visa Inc", "MA": "Mastercard Inc", "PYPL": "PayPal Holdings",
-    "XOM": "ExxonMobil", "CVX": "Chevron Corp", "OXY": "Occidental Petroleum",
-    "COP": "ConocoPhillips", "LLY": "Eli Lilly", "ABBV": "AbbVie Inc",
-    "JNJ": "Johnson & Johnson", "MRK": "Merck & Co", "WMT": "Walmart Inc",
+    "META": "Meta Platforms", "BAC": "Bank of America", "WFC": "Wells Fargo",
+    "C": "Citigroup Inc", "JPM": "JPMorgan Chase", "MS": "Morgan Stanley",
+    "SCHW": "Charles Schwab", "COF": "Capital One", "AXP": "American Express",
+    "GS": "Goldman Sachs", "XOM": "ExxonMobil", "SLB": "SLB (Schlumberger)",
+    "CVX": "Chevron Corp", "OXY": "Occidental Petroleum", "COP": "ConocoPhillips",
+    "EOG": "EOG Resources", "VLO": "Valero Energy", "MPC": "Marathon Petroleum",
+    "MRK": "Merck & Co", "JNJ": "Johnson & Johnson",
+    "ABBV": "AbbVie Inc", "LLY": "Eli Lilly",
+    "TMO": "Thermo Fisher Scientific", "AMGN": "Amgen Inc", "WMT": "Walmart Inc",
     "NKE": "Nike Inc", "DIS": "Walt Disney Co", "SBUX": "Starbucks Corp",
     "HD": "Home Depot", "TGT": "Target Corp", "LOW": "Lowe's Companies",
-    "COST": "Costco Wholesale", "MCD": "McDonald's Corp", "GM": "General Motors",
-    "ABNB": "Airbnb Inc", "BA": "Boeing Co", "GE": "GE Aerospace", "UBER": "Uber Technologies",
-    "HON": "Honeywell International", "CAT": "Caterpillar Inc",
+    "COST": "Costco Wholesale", "MCD": "McDonald's Corp",
+    "HON": "Honeywell International", "BA": "Boeing Co",
+    "RTX": "RTX Corporation", "GE": "GE Aerospace",
+    "CAT": "Caterpillar Inc", "DE": "Deere & Company", "UNP": "Union Pacific",
+    "LMT": "Lockheed Martin", "AVGO": "Broadcom Inc", "V": "Visa Inc",
+    "ISRG": "Intuitive Surgical", "MA": "Mastercard Inc",
+    "ETN": "Eaton Corp", "PH": "Parker-Hannifin",
 }
 
 SECTORS = {
-    "Tech":        ["NVDA", "TSLA", "AAPL", "AMD", "AMZN", "GOOGL", "NFLX", "MSFT", "ORCL", "META", "AVGO", "CRM", "MU"],
-    "Financials":  ["BAC", "WFC", "C", "JPM", "MS", "SCHW", "AXP", "GS", "V", "MA", "PYPL"],
-    "Energy":      ["XOM", "CVX", "OXY", "COP"],
-    "Healthcare":  ["LLY", "ABBV", "JNJ", "MRK"],
-    "Consumer":    ["WMT", "NKE", "DIS", "SBUX", "HD", "TGT", "LOW", "COST", "MCD", "GM", "ABNB"],
-    "Industrials": ["BA", "GE", "UBER", "HON", "CAT"],
+    "Tech":        ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA"],
+    "Financials":  ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA"],
+    "Energy":      ["XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO"],
+    "Healthcare":  ["LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG"],
+    "Consumer":    ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT"],
+    "Industrials": ["RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP"],
 }
 
 def _sector(ticker):
@@ -59,115 +60,25 @@ def _sector(ticker):
             return s
     return "Other"
 
-_BC_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Cache-Control": "max-age=0",
-}
 
-_bc_session = None
-_bc_session_lock = threading.Lock()
-
-def _get_bc_session():
-    global _bc_session
-    with _bc_session_lock:
-        if _bc_session is None:
-            if HAS_CURL_CFFI:
-                from curl_cffi import requests as cr
-                _bc_session = cr.Session(impersonate="chrome124")
-            else:
-                _bc_session = requests.Session()
-                _bc_session.headers.update(_BC_HEADERS)
-    return _bc_session
-
-def _parse_barchart_html(html, ticker):
-    iv_rank = None
-    pc_ratio = None
-    source_note = "barchart_html"
-
-    if iv_rank is None:
-        m = re.search(r'"ivRank(?:52Week)?"\s*:\s*([0-9.]+)', html)
-        if m:
-            iv_rank = float(m.group(1))
-    if pc_ratio is None:
-        m = re.search(r'"pcRatio"\s*:\s*([0-9.]+)', html)
-        if m:
-            pc_ratio = float(m.group(1))
-
-    if iv_rank is None or pc_ratio is None:
-        soup = BeautifulSoup(html, "html.parser")
-        text = soup.get_text(" ", strip=True)
-
-        if iv_rank is None:
-            for pattern in [
-                r'IV\s+Rank\s*:?\s*(\d+(?:\.\d+)?)\s*%?',
-                r'IV\s+Percentile\s*:?\s*(\d+(?:\.\d+)?)\s*%?',
-                r'ivRank["\s:]+(\d+(?:\.\d+)?)',
-            ]:
-                m = re.search(pattern, text, re.IGNORECASE)
-                if m:
-                    iv_rank = float(m.group(1))
-                    break
-
-        if pc_ratio is None:
-            for pattern in [
-                r'Put[/\s-]?Call\s+(?:OI\s+)?Ratio\s*:?\s*(\d+(?:\.\d+)?)',
-                r'P/C\s+(?:OI\s+)?Ratio\s*:?\s*(\d+(?:\.\d+)?)',
-                r'Put[/\-]Call\s*:\s*(\d+(?:\.\d+)?)',
-            ]:
-                m = re.search(pattern, text, re.IGNORECASE)
-                if m:
-                    pc_ratio = float(m.group(1))
-                    break
-
-        if iv_rank is None or pc_ratio is None:
-            for table in soup.find_all("table"):
-                for row in table.find_all("tr"):
-                    cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
-                    for i, cell in enumerate(cells):
-                        cl = cell.lower()
-                        if iv_rank is None and "iv rank" in cl and i + 1 < len(cells):
-                            m = re.search(r"(\d+(?:\.\d+)?)", cells[i + 1])
-                            if m:
-                                iv_rank = float(m.group(1))
-                        if pc_ratio is None and ("put/call" in cl or "p/c" in cl) and i + 1 < len(cells):
-                            m = re.search(r"(\d+(?:\.\d+)?)", cells[i + 1])
-                            if m:
-                                pc_ratio = float(m.group(1))
-
-    return iv_rank, pc_ratio, source_note
-
-def fetch_barchart(ticker):
-    url = f"https://www.barchart.com/stocks/quotes/{ticker}/put-call-ratios"
+def _get_price(t):
+    """Resilient price fetch across yfinance versions."""
     try:
-        session = _get_bc_session()
-        if HAS_CURL_CFFI:
-            resp = session.get(url, timeout=15, headers={"Referer": "https://www.barchart.com/"})
-        else:
-            resp = session.get(url, timeout=15, headers={**_BC_HEADERS, "Referer": "https://www.barchart.com/"})
+        fi = t.fast_info
+        for attr in ("last_price", "regularMarketPrice", "previousClose"):
+            val = getattr(fi, attr, None)
+            if val and float(val) > 0:
+                return float(val)
+    except Exception:
+        pass
+    try:
+        hist = t.history(period="1d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+    except Exception:
+        pass
+    return None
 
-        if resp.status_code != 200:
-            return None, None, None, f"Barchart HTTP {resp.status_code}"
-
-        iv_rank, pc_ratio, note = _parse_barchart_html(resp.text, ticker)
-        if iv_rank is None and pc_ratio is None:
-            return None, None, None, "Barchart: could not parse IV rank or P/C ratio"
-
-        return iv_rank, pc_ratio, url, None
-
-    except Exception as exc:
-        return None, None, None, f"Barchart: {exc}"
 
 def fetch_pc_ratio_yfinance(ticker):
     try:
@@ -195,51 +106,69 @@ def fetch_pc_ratio_yfinance(ticker):
     except Exception as exc:
         return None, f"yfinance P/C: {exc}"
 
+
 def fetch_iv_rank_approx(ticker):
+    """
+    IV rank approximation using yfinance.
+
+    Samples ATM implied vol from the nearest 1-2 expirations (both calls and
+    puts) then ranks it as a percentile against the trailing 1-year rolling
+    21-day historical volatility series.  Percentile ranking avoids the
+    min/max floor-to-zero problem that occurs in low-vol environments.
+    """
     try:
         t = yf.Ticker(ticker)
-        info = t.fast_info
-        price = getattr(info, "last_price", None) or getattr(info, "regularMarketPrice", None)
+
+        price = _get_price(t)
         if not price:
-            hist_price = t.history(period="1d")
-            if hist_price.empty:
-                return None, "yfinance: no price"
-            price = float(hist_price["Close"].iloc[-1])
+            return None, "yfinance: no price"
 
         exps = t.options
         if not exps:
             return None, "yfinance: no expirations"
 
-        chain = t.option_chain(exps[0])
-        calls = chain.calls.copy()
-        if calls.empty:
-            return None, "yfinance: no calls"
+        # Sample ATM IV from the first two expirations (calls + puts)
+        iv_samples = []
+        for exp in exps[:2]:
+            try:
+                chain = t.option_chain(exp)
+                for leg in (chain.calls, chain.puts):
+                    if leg.empty:
+                        continue
+                    leg = leg.copy()
+                    leg["dist"] = abs(leg["strike"] - price)
+                    atm_row = leg.nsmallest(1, "dist").iloc[0]
+                    iv = float(atm_row["impliedVolatility"])
+                    if iv > 0 and iv == iv:  # valid, not NaN
+                        iv_samples.append(iv)
+            except Exception:
+                continue
 
-        calls["dist"] = abs(calls["strike"] - price)
-        atm = calls.nsmallest(1, "dist").iloc[0]
-        current_iv = float(atm["impliedVolatility"])
-        if current_iv <= 0 or current_iv != current_iv:
-            return None, "yfinance: invalid ATM IV"
+        if not iv_samples:
+            return None, "yfinance: could not sample ATM IV"
 
+        current_iv = float(np.mean(iv_samples))
+
+        # 1-year price history for rolling HV
         hist = t.history(period="1y")
         if len(hist) < 60:
             return None, "yfinance: insufficient price history"
 
         log_ret = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
-        hv_series = log_ret.rolling(30).std() * np.sqrt(252)
-        hv_clean = hv_series.dropna()
-        if hv_clean.empty:
+        hv_series = log_ret.rolling(21).std() * np.sqrt(252)
+        hv_vals = hv_series.dropna().values
+
+        if len(hv_vals) == 0:
             return None, "yfinance: could not compute HV"
 
-        hv_min, hv_max = float(hv_clean.min()), float(hv_clean.max())
-        if hv_max == hv_min:
-            return 50.0, None
-
-        rank = round(((current_iv - hv_min) / (hv_max - hv_min)) * 100, 1)
-        return max(0.0, min(100.0, rank)), None
+        # Percentile rank: fraction of historical HV observations below current IV
+        # This never floors to 0 or 100 artificially
+        pct_rank = float(np.mean(hv_vals < current_iv)) * 100
+        return round(pct_rank, 1), None
 
     except Exception as exc:
         return None, f"yfinance IV approx: {exc}"
+
 
 def fetch_earnings_status(ticker):
     try:
@@ -294,6 +223,7 @@ def fetch_earnings_status(ticker):
     except Exception:
         return None, "unknown"
 
+
 def compute_score(iv_rank, pc_ratio):
     score = 0
     if iv_rank is not None:
@@ -308,6 +238,7 @@ def compute_score(iv_rank, pc_ratio):
             score += 1
     return score
 
+
 def compute_setup(iv_rank, pc_ratio):
     if iv_rank is None:
         return "No Data"
@@ -318,6 +249,7 @@ def compute_setup(iv_rank, pc_ratio):
             return "Bear call spread"
         return "High IV / neutral"
     return "Watch"
+
 
 def scan_ticker(ticker):
     result = {
@@ -338,45 +270,30 @@ def scan_ticker(ticker):
     }
 
     try:
-        info = yf.Ticker(ticker).fast_info
-        p = getattr(info, "last_price", None) or getattr(info, "regularMarketPrice", None)
+        t = yf.Ticker(ticker)
+        p = _get_price(t)
         if p:
-            result["price"] = round(float(p), 2)
+            result["price"] = round(p, 2)
     except Exception:
         pass
 
-    bc_url = f"https://www.barchart.com/stocks/quotes/{ticker}/put-call-ratios"
-    result["sources"].append(bc_url)
-
-    iv_rank, pc_ratio, bc_source, bc_error = fetch_barchart(ticker)
-
-    if iv_rank is not None:
-        result["iv_rank"]   = round(iv_rank, 1)
-        result["iv_source"] = "barchart"
+    # IV rank via yfinance approximation
+    yf_iv, yf_iv_err = fetch_iv_rank_approx(ticker)
+    if yf_iv is not None:
+        result["iv_rank"]   = round(yf_iv, 1)
+        result["iv_source"] = "yfinance_approx"
+        result["sources"].append(f"yfinance ATM IV percentile ({ticker})")
     else:
-        result["errors"].append(bc_error or "Barchart IV unavailable")
+        result["errors"].append(yf_iv_err or "IV rank unavailable")
 
-    if pc_ratio is not None:
-        result["pc_ratio"]  = pc_ratio
-        result["pc_source"] = "barchart"
-
-    if result["pc_ratio"] is None:
-        yf_pc, yf_pc_err = fetch_pc_ratio_yfinance(ticker)
-        if yf_pc is not None:
-            result["pc_ratio"]  = yf_pc
-            result["pc_source"] = "yfinance_options"
-            result["sources"].append(f"yfinance options chain ({ticker})")
-        else:
-            result["errors"].append(yf_pc_err or "yfinance P/C unavailable")
-
-    if result["iv_rank"] is None:
-        yf_iv, yf_iv_err = fetch_iv_rank_approx(ticker)
-        if yf_iv is not None:
-            result["iv_rank"]   = round(yf_iv, 1)
-            result["iv_source"] = "yfinance_approx"
-            result["sources"].append(f"yfinance HV approx ({ticker})")
-        else:
-            result["errors"].append(yf_iv_err or "yfinance IV approx unavailable")
+    # P/C ratio via yfinance options chain
+    yf_pc, yf_pc_err = fetch_pc_ratio_yfinance(ticker)
+    if yf_pc is not None:
+        result["pc_ratio"]  = yf_pc
+        result["pc_source"] = "yfinance_options"
+        result["sources"].append(f"yfinance options chain ({ticker})")
+    else:
+        result["errors"].append(yf_pc_err or "P/C ratio unavailable")
 
     earn_date, earn_status = fetch_earnings_status(ticker)
     result["earnings_date"]   = earn_date
@@ -386,6 +303,7 @@ def scan_ticker(ticker):
     result["setup"] = compute_setup(result["iv_rank"], result["pc_ratio"])
 
     return result
+
 
 def run_full_scan(progress_cb=None):
     results = []
