@@ -1,10 +1,44 @@
 import time
+import math
 import threading
 import numpy as np
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yfinance as yf
+
+
+# ---------------------------------------------------------------------------
+# Black-Scholes IV solver (avoids relying on yfinance impliedVolatility field,
+# which returns near-zero garbage when bid/ask quotes are unavailable)
+# ---------------------------------------------------------------------------
+def _bs_call(S, K, T, r, sigma):
+    """Black-Scholes call price."""
+    if T <= 0 or sigma <= 0:
+        return max(S - K * math.exp(-r * T), 0.0)
+    sqrtT = math.sqrt(T)
+    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT)
+    d2 = d1 - sigma * sqrtT
+    N = lambda x: 0.5 * (1.0 + math.erf(x / math.sqrt(2)))
+    return S * N(d1) - K * math.exp(-r * T) * N(d2)
+
+
+def _solve_iv(S, K, T, r, market_price, tol=1e-4, max_iter=80):
+    """Return annualized IV (decimal) or None if unsolvable."""
+    intrinsic = max(S - K * math.exp(-r * T), 0.0)
+    if market_price <= intrinsic + 1e-6:
+        return None
+    lo, hi = 0.005, 5.0
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2.0
+        val = _bs_call(S, K, T, r, mid)
+        if abs(val - market_price) < tol:
+            return mid
+        if val < market_price:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
 
 WATCHLIST = [
     # Technology (11)
@@ -127,9 +161,20 @@ def fetch_iv_rank_approx(ticker):
         if not exps:
             return None, "yfinance: no expirations"
 
-        # Sample ATM IV from the first two expirations (calls + puts)
+        # Sample ATM IV from the first 3 expirations with >=7 DTE
+        # Use Black-Scholes solver on lastPrice — yfinance's impliedVolatility
+        # field returns near-zero garbage when live bid/ask are unavailable.
         iv_samples = []
-        for exp in exps[:2]:
+        today = date.today()
+        r = 0.045  # risk-free rate estimate
+        sampled = 0
+        for exp in exps:
+            if sampled >= 3:
+                break
+            dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
+            if dte < 7:
+                continue  # skip ultra-short-dated; IV unreliable
+            T = dte / 252.0
             try:
                 chain = t.option_chain(exp)
                 for leg in (chain.calls, chain.puts):
@@ -138,11 +183,19 @@ def fetch_iv_rank_approx(ticker):
                     leg = leg.copy()
                     leg["dist"] = abs(leg["strike"] - price)
                     atm_row = leg.nsmallest(1, "dist").iloc[0]
-                    iv = float(atm_row["impliedVolatility"])
-                    if iv > 0 and iv == iv:  # valid, not NaN
+                    K = float(atm_row["strike"])
+                    # prefer mid-price; fall back to lastPrice
+                    bid = float(atm_row.get("bid", 0) or 0)
+                    ask = float(atm_row.get("ask", 0) or 0)
+                    opt_price = (bid + ask) / 2.0 if bid > 0 and ask > 0 else float(atm_row.get("lastPrice", 0) or 0)
+                    if opt_price <= 0:
+                        continue
+                    iv = _solve_iv(price, K, T, r, opt_price)
+                    if iv and 0.01 <= iv <= 3.0:
                         iv_samples.append(iv)
             except Exception:
                 continue
+            sampled += 1
 
         if not iv_samples:
             return None, "yfinance: could not sample ATM IV"
