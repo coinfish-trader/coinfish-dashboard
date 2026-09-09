@@ -160,7 +160,7 @@ def fetch_iv_rank_approx(ticker):
             return None, "yfinance: no expirations"
 
         # Sample ATM IV from the first 3 expirations with >=7 DTE
-        # Use Black-Scholes solver on lastPrice â yfinance's impliedVolatility
+        # Use Black-Scholes solver on lastPrice -- yfinance's impliedVolatility
         # field returns near-zero garbage when live bid/ask are unavailable.
         iv_samples = []
         today = date.today()
@@ -305,7 +305,7 @@ def compute_setup(iv_rank, pc_ratio):
 def scan_ticker(ticker):
     result = {
         "ticker":          ticker,
-        "company":         COMPANY_NAMES,ÀÈet(ticker, ticker),
+        "company":         COMPANY_NAMES.get(ticker, ticker),
         "sector":          _sector(ticker),
         "price":           None,
         "iv_rank":         None,
