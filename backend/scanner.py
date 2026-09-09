@@ -41,51 +41,49 @@ def _solve_iv(S, K, T, r, market_price, tol=1e-4, max_iter=80):
     return (lo + hi) / 2.0
 
 WATCHLIST = [
-    # Technology (11)
-    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA",
+    # Technology (13)
+    "NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA", "CRM", "MU",
     # Financials (11)
-    "JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA",
-    # Energy (8)
-    "XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO",
-    # Healthcare (7)
-    "LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG",
+    "JPM", "BAC", "GS", "AXP", "SCHW", "MS", "WFC", "C", "V", "MA", "PYPL",
+    # Energy (4)
+    "XOM", "CVX", "OXY", "COP",
+    # Healthcare (4)
+    "LLY", "ABBV", "JNJ", "MRK",
     # Consumer (9)
     "COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT",
-    # Industrials / Defense / Transportation (10)
-    "RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP",
+    # Industrials / Transport / Travel (7)
+    "BA", "GE", "HON", "CAT", "UBER", "GM", "ABNB",
 ]
 
 COMPANY_NAMES = {
     "NVDA": "NVIDIA Corp", "TSLA": "Tesla Inc", "AAPL": "Apple Inc",
     "AMD": "Advanced Micro Devices", "AMZN": "Amazon.com", "GOOGL": "Alphabet Inc",
     "NFLX": "Netflix Inc", "MSFT": "Microsoft Corp", "ORCL": "Oracle Corp",
-    "META": "Meta Platforms", "BAC": "Bank of America", "WFC": "Wells Fargo",
+    "META": "Meta Platforms", "CRM": "Salesforce Inc", "MU": "Micron Technology",
+    "BAC": "Bank of America", "WFC": "Wells Fargo",
     "C": "Citigroup Inc", "JPM": "JPMorgan Chase", "MS": "Morgan Stanley",
-    "SCHW": "Charles Schwab", "COF": "Capital One", "AXP": "American Express",
-    "GS": "Goldman Sachs", "XOM": "ExxonMobil", "SLB": "SLB (Schlumberger)",
-    "CVX": "Chevron Corp", "OXY": "Occidental Petroleum", "COP": "ConocoPhillips",
-    "EOG": "EOG Resources", "VLO": "Valero Energy", "MPC": "Marathon Petroleum",
+    "SCHW": "Charles Schwab", "AXP": "American Express",
+    "GS": "Goldman Sachs", "PYPL": "PayPal Holdings",
+    "XOM": "ExxonMobil", "CVX": "Chevron Corp",
+    "OXY": "Occidental Petroleum", "COP": "ConocoPhillips",
     "MRK": "Merck & Co", "JNJ": "Johnson & Johnson",
     "ABBV": "AbbVie Inc", "LLY": "Eli Lilly",
-    "TMO": "Thermo Fisher Scientific", "AMGN": "Amgen Inc", "WMT": "Walmart Inc",
-    "NKE": "Nike Inc", "DIS": "Walt Disney Co", "SBUX": "Starbucks Corp",
-    "HD": "Home Depot", "TGT": "Target Corp", "LOW": "Lowe's Companies",
-    "COST": "Costco Wholesale", "MCD": "McDonald's Corp",
+    "WMT": "Walmart Inc", "NKE": "Nike Inc", "DIS": "Walt Disney Co",
+    "SBUX": "Starbucks Corp", "HD": "Home Depot", "TGT": "Target Corp",
+    "LOW": "Lowe's Companies", "COST": "Costco Wholesale", "MCD": "McDonald's Corp",
     "HON": "Honeywell International", "BA": "Boeing Co",
-    "RTX": "RTX Corporation", "GE": "GE Aerospace",
-    "CAT": "Caterpillar Inc", "DE": "Deere & Company", "UNP": "Union Pacific",
-    "LMT": "Lockheed Martin", "AVGO": "Broadcom Inc", "V": "Visa Inc",
-    "ISRG": "Intuitive Surgical", "MA": "Mastercard Inc",
-    "ETN": "Eaton Corp", "PH": "Parker-Hannifin",
+    "GE": "GE Aerospace", "CAT": "Caterpillar Inc",
+    "AVGO": "Broadcom Inc", "V": "Visa Inc", "MA": "Mastercard Inc",
+    "UBER": "Uber Technologies", "GM": "General Motors", "ABNB": "Airbnb Inc",
 }
 
 SECTORS = {
-    "Tech":        ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA"],
-    "Financials":  ["JPM", "BAC", "GS", "AXP", "SCHW", "COF", "MS", "WFC", "C", "V", "MA"],
-    "Energy":      ["XOM", "CVX", "COP", "OXY", "EOG", "SLB", "MPC", "VLO"],
-    "Healthcare":  ["LLY", "ABBV", "AMGN", "TMO", "JNJ", "MRK", "ISRG"],
+    "Tech":        ["NVDA", "AMD", "AAPL", "AMZN", "GOOGL", "META", "MSFT", "NFLX", "ORCL", "AVGO", "TSLA", "CRM", "MU"],
+    "Financials":  ["JPM", "BAC", "GS", "AXP", "SCHW", "MS", "WFC", "C", "V", "MA", "PYPL"],
+    "Energy":      ["XOM", "CVX", "OXY", "COP"],
+    "Healthcare":  ["LLY", "ABBV", "JNJ", "MRK"],
     "Consumer":    ["COST", "HD", "WMT", "MCD", "LOW", "NKE", "DIS", "SBUX", "TGT"],
-    "Industrials": ["RTX", "BA", "HON", "CAT", "GE", "DE", "ETN", "PH", "LMT", "UNP"],
+    "Industrials": ["BA", "GE", "HON", "CAT", "UBER", "GM", "ABNB"],
 }
 
 def _sector(ticker):
@@ -162,7 +160,7 @@ def fetch_iv_rank_approx(ticker):
             return None, "yfinance: no expirations"
 
         # Sample ATM IV from the first 3 expirations with >=7 DTE
-        # Use Black-Scholes solver on lastPrice — yfinance's impliedVolatility
+        # Use Black-Scholes solver on lastPrice â yfinance's impliedVolatility
         # field returns near-zero garbage when live bid/ask are unavailable.
         iv_samples = []
         today = date.today()
@@ -307,7 +305,7 @@ def compute_setup(iv_rank, pc_ratio):
 def scan_ticker(ticker):
     result = {
         "ticker":          ticker,
-        "company":         COMPANY_NAMES.get(ticker, ticker),
+        "company":         COMPANY_NAMES,ÀÈet(ticker, ticker),
         "sector":          _sector(ticker),
         "price":           None,
         "iv_rank":         None,
