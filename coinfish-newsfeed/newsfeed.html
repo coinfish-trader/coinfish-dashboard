@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Open+Sans:wght@400;600&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root {
     --navy: #0A2342;
@@ -72,8 +72,6 @@
     white-space: nowrap;
   }
   header .brand span.gold { color: var(--gold-bright); }
-  body.light-theme .logo-dark { display: none !important; }
-  body.light-theme .logo-light { display: block !important; }
   header .status { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   header .status.live::before {
     content: "";
@@ -590,6 +588,9 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+  /* Trump's Truths: gold rail so policy posts stand out in the mixed feed */
+  .feed-item.truth { box-shadow: inset 3px 0 0 var(--gold-bright); }
+  .feed-item.truth .source { color: var(--gold-bright); }
 
   /* Biggest Pre-Market Movers */
   .movers-list { display: flex; flex-direction: column; }
@@ -1120,7 +1121,7 @@
 <body>
 
 <header>
-  <div class="brand" style="display:flex;flex-direction:column;align-items:flex-start;"><img src="/coinfish-lockup-white.png" alt="Coinfish" class="logo-dark" style="height:30px;width:auto;display:block;"><img src="/coinfish-lockup-navy.png" alt="Coinfish" class="logo-light" style="height:30px;width:auto;display:none;"><span style="font-family:'Dancing Script',cursive;font-weight:700;font-size:1.25rem;color:var(--gold-bright);margin-top:-2px;margin-left:58px;line-height:1;">Newsfeed</span></div>
+  <div class="brand">Coin<span class="gold">fish</span> Newsfeed</div>
   <div class="search-wrap">
     <input class="search-input" id="searchInput" type="text" placeholder="Search tickers or keywords…" autocomplete="off">
     <button class="search-clear" id="searchClear">✕</button>
@@ -1334,7 +1335,7 @@
 
 <div class="disclaimer">
   Personal tool for Coinfish Trading Company. Headlines aggregated from Yahoo Finance, CNBC, MarketWatch, and
-  Federal Reserve RSS; filings and insider activity from SEC EDGAR (real-time filings feed + full-text search,
+  Federal Reserve RSS, plus Trump's Truth Social posts via the trumpstruth.org archive; filings and insider activity from SEC EDGAR (real-time filings feed + full-text search,
   cross-referenced against SEC's public ticker/CIK map to flag watchlist names); calendar data from Nasdaq public
   endpoints and the ForexFactory weekly economic feed; VIX, VIX9D, Treasury yields, and sector ETFs via yfinance;
   Fear &amp; Greed Index via CNN's public data feed. All free, keyless sources. No Benzinga / PR Newswire / X
@@ -1664,7 +1665,7 @@ function renderNews() {
   document.getElementById("newsCount").textContent = list.length + (searchTerm ? " matching" : " stories");
   if (!list.length) { el.innerHTML = '<div class="empty">No headlines match.</div>'; return; }
   el.innerHTML = list.slice(0, 80).map(n => `
-    <div class="feed-item">
+    <div class="feed-item${n.source === "Trump's Truths" ? " truth" : ""}">
       <div class="time">${esc(timeAgo(n.published))}</div>
       <div class="ticker-tag">${tickerLogoHTML(n.ticker, 22)}</div>
       <div class="body">

@@ -25,7 +25,7 @@ This only works on the same network and only while this computer is on and the s
 ## What's in it
 
 - **Ticker tape** — live price + % change for your 58-name watchlist (SPY/QQQ/IWM + the full sector list), via yfinance.
-- **Market Feed** — headlines from Yahoo Finance per-ticker RSS across the whole watchlist, Yahoo top stories, CNBC top news, MarketWatch top stories, and Federal Reserve press releases. Deduped and filterable by source.
+- **Market Feed** — headlines from Yahoo Finance per-ticker RSS across the whole watchlist, Yahoo top stories, CNBC top news, MarketWatch top stories, Federal Reserve press releases, and Trump's Truth Social posts (via the public trumpstruth.org archive RSS, since Truth Social's own API blocks scripts; gold-tagged in the feed). Deduped and filterable by source.
 - **SEC Filings** — real-time feed straight from SEC EDGAR (`getcurrent`), pulling 8-K, 4, 13D, 13G, S-1, 424B, 6-K. Filterable by form type.
 - **Insider Activity (Form 4)** — recent Form 4 filings via EDGAR full-text search (filer/company + link; SEC's full-text index doesn't expose parsed dollar amounts, just the filing).
 - **Sidebar calendar** — today's economic events, watchlist ex-dividend dates, and this month's IPO calendar — all from Nasdaq's public JSON endpoints.
@@ -41,7 +41,7 @@ All sources are free and keyless. No signup, no rate-limit surprises tied to a p
 
 ## What's NOT in it (vs. the STN feed you showed me)
 
-STN's feed is built on paid wire access: Benzinga's real API, PR Newswire/GlobeNewswire/BusinessWire/AccessWire structured feeds, a selective X/Twitter monitor, and a "Trump's Truths" feed. Those require paid API contracts I don't have credentials for, so they're not replicated. If you want closer parity later:
+STN's feed is built on paid wire access: Benzinga's real API, PR Newswire/GlobeNewswire/BusinessWire/AccessWire structured feeds, and a selective X/Twitter monitor. Those require paid API contracts I don't have credentials for, so they're not replicated. If you want closer parity later:
 - Benzinga News API (paid) is the single biggest gap — it's the backbone of STN's speed and structured ticker-tagging.
 - PR wire feeds' structured/paid tiers would give ticker-tagged, faster delivery than the public RSS.
 - Insider buy/sell dollar amounts (the "$401K" style STN shows) would need parsing the actual Form 4 XML, not just the filing index — doable but a separate build.

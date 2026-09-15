@@ -6,13 +6,14 @@ All sources here are free / keyless public endpoints:
   - SEC EDGAR full-text search (used to pull recent Form 4 insider buys/sells)
   - Yahoo Finance per-ticker RSS + top-stories RSS
   - CNBC top news RSS, MarketWatch top stories RSS, Federal Reserve press releases RSS
+  - Trump's Truth Social posts via the trumpstruth.org archive RSS
   - Nasdaq public calendar JSON endpoints (dividends / IPOs / economic events)
   - ForexFactory weekly calendar XML (economic event importance ratings)
   - yfinance for watchlist price/% change (ticker tape)
 
 None of these require an API key or account. Coverage is a step below true
 paid wires (Benzinga's real API, PR Newswire structured feed, X/Twitter
-monitoring, "Trump's Truths") which the Stock Trader Network product pays
+monitoring) which the Stock Trader Network product pays
 for - those are not included here. See README for what's in vs out.
 """
 
@@ -332,11 +333,56 @@ def fetch_wsj_markets(timeout=10):
     return _fetch_generic_rss(url, "WSJ", timeout=timeout)
 
 
+def fetch_trump_truths(timeout=10, limit=40):
+    # Donald Trump's Truth Social posts ("Trump's Truths"), via the public
+    # trumpstruth.org archive RSS. Truth Social's own API
+    # (truthsocial.com/api/v1/...) sits behind Cloudflare and returns 403 to
+    # scripts, so the archive is the reliable keyless route. It updates
+    # within minutes of a post.
+    #
+    # Many archive items are titled "[No Title] - Post from ...", so the post
+    # text (description) is used as the headline. Empty posts (image/video
+    # only) and bare "RT: <url>" reposts are skipped as zero-signal.
+    # Link points at the original truthsocial.com post when available.
+    url = "https://www.trumpstruth.org/feed"
+    label = "Trump's Truths"
+    try:
+        resp = _session.get(url, headers=YAHOO_HEADERS, timeout=timeout)
+        if resp.status_code != 200:
+            return [], f"{label} HTTP {resp.status_code}"
+        feed = feedparser.parse(resp.content)
+        out = []
+        for e in feed.entries:
+            raw = e.get("summary") or e.get("description") or ""
+            text = html.unescape(re.sub(r"<[^>]+>", " ", raw))
+            text = re.sub(r"\s+", " ", text).strip()
+            if not text:
+                title = (e.get("title") or "").strip()
+                if title and not title.startswith("[No Title]"):
+                    text = title
+            if not text or re.fullmatch(r"RT:\s*\S+", text):
+                continue
+            if len(text) > 280:
+                text = text[:277].rstrip() + "..."
+            out.append({
+                "ticker": None,
+                "headline": text,
+                "link": e.get("truth_originalurl") or e.get("link"),
+                "published": e.get("published"),
+                "source": label,
+            })
+            if len(out) >= limit:
+                break
+        return out, None
+    except Exception as exc:
+        return [], f"{label}: {exc}"
+
+
 def fetch_all_news_multi(tickers, max_workers=10):
     """
     Combines per-ticker Yahoo news, Yahoo top stories, CNBC, MarketWatch,
-    Fed press releases, Bloomberg, Fox Business, Barchart Options News, and
-    WSJ Markets into one deduped, time-sorted list.
+    Fed press releases, Bloomberg, Fox Business, Barchart Options News,
+    WSJ Markets, and Trump's Truth Social posts into one deduped, time-sorted list.
     """
     all_items = []
     errors = []
@@ -358,6 +404,7 @@ def fetch_all_news_multi(tickers, max_workers=10):
         fetch_fox_business,
         fetch_barchart_options_news,
         fetch_wsj_markets,
+        fetch_trump_truths,
     ):
         items, err = fetcher()
         all_items.extend(items)
