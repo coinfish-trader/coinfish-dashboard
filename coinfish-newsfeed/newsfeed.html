@@ -625,7 +625,7 @@
   .news-modal-overlay[hidden] { display: none; }
   .news-modal {
     position: relative;
-    width: 100%; max-width: 560px; max-height: 86vh; overflow-y: auto;
+    width: 100%; max-width: 720px; max-height: 88vh; overflow-y: auto;
     background: var(--navy-800);
     border: 1px solid var(--gold);
     border-radius: 12px;
@@ -665,6 +665,24 @@
     white-space: pre-line; overflow-wrap: anywhere; margin: 0 0 16px;
   }
   .news-modal-body.empty-preview { color: var(--muted); font-style: italic; }
+  .news-modal-article { margin: 0 0 16px; }
+  .news-modal-article p {
+    font-size: 0.95rem; line-height: 1.65; color: var(--off-white);
+    margin: 0 0 0.9em; overflow-wrap: anywhere;
+  }
+  .news-modal-status {
+    font-size: 0.75rem; color: var(--muted); margin: -6px 0 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .news-modal-status.loading::before {
+    content: ""; width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--line-strong); border-top-color: var(--teal-bright);
+    animation: cf-spin 0.8s linear infinite;
+  }
+  @media (max-width: 600px) {
+    .news-modal-overlay { padding: 0; align-items: stretch; }
+    .news-modal { max-width: none; max-height: none; height: 100%; border-radius: 0; border: 0; padding: 18px 16px 28px; }
+  }
   .news-modal-link {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 8px 14px; border-radius: 100px;
@@ -1424,7 +1442,8 @@
 
 <div class="disclaimer">
   Personal tool for Coinfish Trading Company. Headlines aggregated from Yahoo Finance, CNBC, MarketWatch, and
-  Federal Reserve RSS, plus Trump's Truth Social posts via the trumpstruth.org archive; filings and insider activity from SEC EDGAR (real-time filings feed + full-text search,
+  Federal Reserve RSS, WSJ, Bloomberg, Fox Business, NYT, Financial Times, Seeking Alpha, Investing.com, Nasdaq,
+  Zero Hedge, BBC, Business Insider, Axios, plus Trump's Truth Social posts via the trumpstruth.org archive; filings and insider activity from SEC EDGAR (real-time filings feed + full-text search,
   cross-referenced against SEC's public ticker/CIK map to flag watchlist names); calendar data from Nasdaq public
   endpoints and the ForexFactory weekly economic feed; VIX, VIX9D, Treasury yields, and sector ETFs via yfinance;
   Fear &amp; Greed Index via CNN's public data feed. All free, keyless sources. No Benzinga / PR Newswire / X
@@ -1441,6 +1460,8 @@
     <h3 id="newsModalTitle"></h3>
     <img id="newsModalImg" class="news-modal-img" alt="" hidden>
     <p id="newsModalBody" class="news-modal-body"></p>
+    <div id="newsModalStatus" class="news-modal-status" hidden></div>
+    <div id="newsModalArticle" class="news-modal-article" hidden></div>
     <a id="newsModalLink" class="news-modal-link" target="_blank" rel="noopener"></a>
   </div>
 </div>
@@ -1473,7 +1494,8 @@ function tickerLogoHTML(ticker, size) {
 }
 
 async function getJSON(path) {
-  const res = await fetch(API + path, { cache: "no-store" });
+  const res = await fetch(API + path, { cache: "no-store", credentials: "same-origin" });
+  if (res.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname); throw new Error("login required"); }
   if (!res.ok) throw new Error(path + " -> " + res.status);
   return res.json();
 }
@@ -1739,6 +1761,7 @@ let newsFilter = "all";
 async function loadNews() {
   const j = await getJSON("/api/news");
   allNews = j.data || [];
+  newsAuthEnabled = !!j.auth;
   const sources = ["all", ...new Set(allNews.map(n => n.source))];
   const filterWrap = document.getElementById("newsFilters");
   filterWrap.innerHTML = sources.map(s =>
@@ -1755,6 +1778,7 @@ function refreshFilterActive(wrap, val) {
 }
 
 let renderedNews = [];
+let newsAuthEnabled = false;
 
 const NEWS_LINK_LABELS = {
   "Trump's Truths": "View on Truth Social",
@@ -1776,6 +1800,7 @@ function openNewsModal(n) {
     (when ? `<span>${esc(when)}</span>` : "");
 
   const body = document.getElementById("newsModalBody");
+  body.hidden = false;
   const summary = (n.summary || "").trim();
   // Truth posts: the full post is the summary, so don't repeat a trimmed headline above it.
   document.getElementById("newsModalTitle").textContent = isTruth ? "Truth Social post" : (n.headline || "");
@@ -1797,10 +1822,59 @@ function openNewsModal(n) {
   link.hidden = !n.link;
   link.textContent = (NEWS_LINK_LABELS[n.source] || ("Read on " + n.source)) + " ↗";
 
+  const status = document.getElementById("newsModalStatus");
+  const article = document.getElementById("newsModalArticle");
+  article.hidden = true;
+  article.textContent = "";
+  status.hidden = true;
+  status.className = "news-modal-status";
+  const token = ++newsModalToken;
+  if (n.full && n.link) {
+    status.hidden = false;
+    status.classList.add("loading");
+    status.textContent = "Loading full article…";
+    loadFullArticle(n, token);
+  } else if (newsAuthEnabled && n.link && !isTruth) {
+    status.hidden = false;
+    status.textContent = "Full text isn't available for " + n.source + " (paywalled or blocked). Summary only.";
+  }
+
   overlay.hidden = false;
   document.body.style.overflow = "hidden";
   card.scrollTop = 0;
   overlay.querySelector(".news-modal-close").focus({preventScroll: true});
+}
+
+let newsModalToken = 0;
+
+async function loadFullArticle(n, token) {
+  const status = document.getElementById("newsModalStatus");
+  const article = document.getElementById("newsModalArticle");
+  const body = document.getElementById("newsModalBody");
+  let text = "";
+  try {
+    const j = await getJSON("/api/article?url=" + encodeURIComponent(n.link));
+    text = (j.text || "").trim();
+  } catch (e) { text = ""; }
+  if (token !== newsModalToken) return;  // user already opened a different story
+  status.classList.remove("loading");
+  if (!text) {
+    status.textContent = "Couldn't load the full article from " + n.source + ". Summary shown; use the link for the rest.";
+    return;
+  }
+  const paras = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  article.innerHTML = "";
+  paras.forEach(pText => {
+    const p = document.createElement("p");
+    p.textContent = pText;
+    article.appendChild(p);
+  });
+  const words = text.split(/\s+/).length;
+  status.textContent = n.source === "Trump's Truths"
+    ? "Full post"
+    : "Full article · " + Math.max(1, Math.round(words / 230)) + " min read";
+  body.hidden = true;  // the article replaces the short summary
+  article.hidden = false;
 }
 
 function closeNewsModal() {

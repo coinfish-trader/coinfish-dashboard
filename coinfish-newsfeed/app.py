@@ -1,10 +1,15 @@
 import os
 import time
+import hmac
+import hashlib
 import threading
+from collections import OrderedDict
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session, redirect, Response
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import news_sources as ns
 
@@ -86,7 +91,111 @@ MARKET_CAP_UNIVERSE = sorted((set(WATCHLIST) | {
 # during live verification, fixed same day.
 
 app = Flask(__name__, static_folder=".", static_url_path="")
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # Railway terminates TLS in front of us
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# ---------------------------------------------------------------------------
+# Login gate (added 2026-09-16)
+# ---------------------------------------------------------------------------
+# The Market Feed pop-up shows full article text from other outlets, which
+# should only be readable privately. Set NEWSFEED_PASSWORD in Railway to turn
+# the login on. With it unset (e.g. local runs), the site stays open as
+# before but /api/article refuses to serve full text, so full articles are
+# never shown on an open site.
+# The gate sits in front of EVERYTHING (not just the page) because
+# static_folder="." would otherwise also serve the .py source files.
+NEWSFEED_PASSWORD = os.environ.get("NEWSFEED_PASSWORD", "")
+AUTH_ENABLED = bool(NEWSFEED_PASSWORD)
+if AUTH_ENABLED:
+    # Derived from the password so sessions survive restarts and are shared
+    # across gunicorn workers; changing the password logs everyone out.
+    app.secret_key = os.environ.get("SECRET_KEY") or hashlib.sha256(
+        ("coinfish-newsfeed:" + NEWSFEED_PASSWORD).encode()).hexdigest()
+    app.config.update(
+        PERMANENT_SESSION_LIFETIME=timedelta(days=90),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=bool(os.environ.get("RAILWAY_ENVIRONMENT")),
+    )
+
+PUBLIC_PATHS = {"/login", "/favicon.ico", "/favicon-16x16.png", "/favicon-32x32.png",
+                "/apple-touch-icon.png", "/api/health"}
+
+LOGIN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coinfish Newsfeed · Sign in</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:linear-gradient(180deg,#0A2342,#061629);color:#fff;
+       font-family:Inter,'Open Sans',system-ui,sans-serif;padding:16px}
+  form{width:100%;max-width:340px;background:#0D2C52;border:1px solid rgba(255,255,255,.1);
+       border-radius:14px;padding:26px 22px}
+  h1{margin:0 0 4px;font-size:1.2rem}
+  h1 span{color:#E6C24F}
+  p{margin:0 0 18px;color:#9DB2CC;font-size:.85rem}
+  input{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:9px;
+        border:1px solid rgba(255,255,255,.18);background:#061629;color:#fff;font-size:1rem}
+  input:focus{outline:none;border-color:#25C5D4}
+  button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:100px;font-weight:700;
+         font-size:.95rem;color:#061629;cursor:pointer;
+         background:linear-gradient(100deg,#25C5D4,#E6C24F)}
+  .err{color:#E8505B;font-size:.82rem;margin:10px 0 0}
+</style></head><body>
+<form method="post" action="/login">
+  <h1>Coin<span>fish</span> Newsfeed</h1>
+  <p>Private feed. Enter the password to continue.</p>
+  <input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
+  <input type="hidden" name="next" value="{next}">
+  <button type="submit">Sign in</button>
+  {error}
+</form></body></html>"""
+
+
+def _is_authed():
+    return (not AUTH_ENABLED) or session.get("auth") is True
+
+
+def _safe_next(target):
+    target = target or "/"
+    return target if target.startswith("/") and not target.startswith("//") else "/"
+
+
+@app.before_request
+def _require_login():
+    if _is_authed() or request.path in PUBLIC_PATHS or request.method == "OPTIONS":
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "login_required"}), 401
+    return redirect("/login?next=" + request.full_path.rstrip("?"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not AUTH_ENABLED:
+        return redirect("/")
+    from html import escape
+    nxt = _safe_next(request.values.get("next"))
+    if request.method == "POST":
+        if hmac.compare_digest(request.form.get("password", ""), NEWSFEED_PASSWORD):
+            session.clear()
+            session["auth"] = True
+            session.permanent = True
+            return redirect(nxt)
+        time.sleep(1.0)  # slow down guessing
+        body = LOGIN_PAGE.replace("{next}", escape(nxt)).replace(
+            "{error}", '<p class="err">Wrong password.</p>')
+        return Response(body, status=401, mimetype="text/html")
+    if _is_authed():
+        return redirect(nxt)
+    body = LOGIN_PAGE.replace("{next}", escape(nxt)).replace("{error}", "")
+    return Response(body, mimetype="text/html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login" if AUTH_ENABLED else "/")
 
 # Economic calendar is scoped to the countries Billy actually trades around
 # (US underlyings, plus Canada and China as macro-adjacent watch items) -
@@ -145,6 +254,18 @@ def _no_store_api(resp):
     # refetched every time, never served from the browser's HTTP cache.
     if request.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        # gzip JSON: /api/news is several hundred KB raw and polls every 90s,
+        # which matters on a phone. Compresses ~5x.
+        if (resp.status_code == 200 and not resp.direct_passthrough
+                and "gzip" in request.headers.get("Accept-Encoding", "")
+                and resp.mimetype == "application/json"
+                and "Content-Encoding" not in resp.headers):
+            data = resp.get_data()
+            if len(data) > 2048:
+                import gzip
+                resp.set_data(gzip.compress(data, compresslevel=5))
+                resp.headers["Content-Encoding"] = "gzip"
+                resp.headers["Vary"] = "Accept-Encoding"
     return resp
 
 
@@ -166,13 +287,94 @@ def tape():
     return jsonify({"data": data, "as_of": ts})
 
 
+# link -> feed item, kept for 12h (longer than the 90s news cache) so a
+# pop-up opened a few minutes after the list loaded can still find its item
+# without forcing a full feed rebuild.
+_known_items = {}
+_known_lock = threading.Lock()
+KNOWN_ITEM_TTL = 12 * 3600
+
+
+def _build_news():
+    items, errors = ns.fetch_all_news_multi(WATCHLIST)
+    now = time.time()
+    with _known_lock:
+        for it in items:
+            if it.get("link"):
+                _known_items[it["link"]] = (now, it)
+        for k in [k for k, (ts, _) in _known_items.items() if now - ts > KNOWN_ITEM_TTL]:
+            del _known_items[k]
+    return {"items": items, "errors": errors}
+
+
+def _lookup_item(url):
+    with _known_lock:
+        hit = _known_items.get(url)
+    if hit:
+        return hit[1]
+    data, _ = _cached("news", CACHE_TTL["news"], _build_news)
+    return next((it for it in data["items"] if it.get("link") == url), None)
+
+
 @app.route("/api/news")
 def news():
-    def build():
-        items, errors = ns.fetch_all_news_multi(WATCHLIST)
-        return {"items": items, "errors": errors}
-    data, ts = _cached("news", CACHE_TTL["news"], build)
-    return jsonify({"data": data["items"], "errors": data["errors"], "as_of": ts})
+    data, ts = _cached("news", CACHE_TTL["news"], _build_news)
+    # Full article bodies stay server-side (served one at a time by
+    # /api/article); the list only says whether a full read is available.
+    items = []
+    for it in data["items"]:
+        row = {k: v for k, v in it.items() if k != "content"}
+        row["full"] = AUTH_ENABLED and ns.full_text_possible(it)
+        items.append(row)
+    return jsonify({"data": items, "errors": data["errors"], "as_of": ts, "auth": AUTH_ENABLED})
+
+
+# Extracted article text, keyed by URL. Per gunicorn worker, bounded.
+_article_cache = OrderedDict()
+_article_lock = threading.Lock()
+ARTICLE_CACHE_MAX = 400
+ARTICLE_TTL_OK = 6 * 3600
+ARTICLE_TTL_FAIL = 30 * 60
+
+
+@app.route("/api/article")
+def article():
+    if not AUTH_ENABLED:
+        return jsonify({"error": "full_text_requires_login"}), 403
+    url = request.args.get("url", "")
+    # Only articles that are actually in the current feed can be fetched, so
+    # this endpoint can't be used as a general-purpose proxy.
+    item = _lookup_item(url)
+    if item is None:
+        return jsonify({"error": "not_in_feed"}), 404
+    if urlparse(url).scheme not in ("http", "https"):
+        return jsonify({"error": "bad_url"}), 400
+
+    if item.get("content"):
+        return jsonify({"text": item["content"], "origin": "feed"})
+    if item.get("source") in ns.INLINE_FULL_SOURCES:
+        return jsonify({"text": item.get("summary", ""), "origin": "feed"})
+    if not ns.full_text_possible(item):
+        return jsonify({"error": "not_available"}), 404
+
+    now = time.time()
+    with _article_lock:
+        hit = _article_cache.get(url)
+        if hit and now - hit["ts"] < (ARTICLE_TTL_OK if hit["text"] else ARTICLE_TTL_FAIL):
+            _article_cache.move_to_end(url)
+            cached = hit
+        else:
+            cached = None
+    if cached is None:
+        text, err = ns.fetch_article_text(url)
+        cached = {"text": text, "err": err, "ts": time.time()}
+        with _article_lock:
+            _article_cache[url] = cached
+            while len(_article_cache) > ARTICLE_CACHE_MAX:
+                _article_cache.popitem(last=False)
+    if not cached["text"]:
+        return jsonify({"error": "extract_failed", "detail": cached["err"]}), 502
+    return jsonify({"text": cached["text"], "origin": "page"})
 
 
 @app.route("/api/filings")

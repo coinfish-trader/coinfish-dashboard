@@ -287,6 +287,39 @@ def fetch_yahoo_news_multi(tickers, max_workers=10):
 # Additional free RSS sources: CNBC, MarketWatch, Federal Reserve
 # ---------------------------------------------------------------------------
 
+def _html_to_paragraphs(raw, limit_words=5000):
+    """Feed-embedded article HTML (content:encoded) -> plain text, one paragraph per line."""
+    if not raw:
+        return ""
+    t = re.sub(r"(?i)<\s*(br|/p|/div|/h[1-6]|/li|/blockquote)\s*/?>", "\n", raw)
+    t = html.unescape(re.sub(r"<[^>]+>", " ", t))
+    paras = [re.sub(r"[ \t\r\f\v]+", " ", x).strip() for x in t.split("\n")]
+    paras = [x for x in paras if x]
+    words = 0
+    out = []
+    for para in paras:
+        out.append(para)
+        words += len(para.split())
+        if words >= limit_words:
+            break
+    return "\n".join(out)
+
+
+def _fetch_generic_rss_multi(urls, source_label, timeout=10):
+    """Several feeds from one outlet under one source label."""
+    all_items, errors, seen = [], [], set()
+    for url in urls:
+        items, err = _fetch_generic_rss(url, source_label, timeout=timeout)
+        for it in items:
+            if it["link"] in seen:
+                continue
+            seen.add(it["link"])
+            all_items.append(it)
+        if err:
+            errors.append(err)
+    return all_items, ("; ".join(errors) if errors else None)
+
+
 def _fetch_generic_rss(url, source_label, timeout=10):
     try:
         resp = _session.get(url, headers=YAHOO_HEADERS, timeout=timeout)
@@ -303,6 +336,11 @@ def _fetch_generic_rss(url, source_label, timeout=10):
                 "source": source_label,
                 **_preview_fields(e),
             })
+            content = (e.get("content") or [{}])[0].get("value") if e.get("content") else None
+            if content:
+                full = _html_to_paragraphs(content)
+                if len(full.split()) >= 80:
+                    out[-1]["content"] = full
         return out, None
     except Exception as exc:
         return [], f"{source_label}: {exc}"
@@ -371,6 +409,118 @@ def fetch_wsj_markets(timeout=10):
     return _fetch_generic_rss(url, "WSJ", timeout=timeout)
 
 
+# ---------------------------------------------------------------------------
+# Additional major outlets (added 2026-09-16). All free/keyless RSS, each
+# checked live for same-day items before wiring in.
+#   Paywalled (headline + summary + link only in the pop-up): NYT, FT.
+#   Server-blocked article pages (summary + link only): Seeking Alpha,
+#   Investing.com.
+#   Full article text available: Nasdaq, Zero Hedge, BBC, Business Insider,
+#   Axios (the last two embed the full article in the feed itself).
+# Business Insider and Axios only publish general feeds (no markets-only
+# feed exists), so expect some non-market stories from those two.
+# ---------------------------------------------------------------------------
+
+def fetch_nyt_business(timeout=10):
+    return _fetch_generic_rss_multi([
+        "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+        "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
+    ], "NYT", timeout=timeout)
+
+
+def fetch_ft_markets(timeout=10):
+    return _fetch_generic_rss("https://www.ft.com/markets?format=rss", "Financial Times", timeout=timeout)
+
+
+def fetch_seeking_alpha(timeout=10):
+    # "Market Currents" = SA's fast breaking-news wire (not the opinion articles).
+    return _fetch_generic_rss("https://seekingalpha.com/market_currents.xml", "Seeking Alpha", timeout=timeout)
+
+
+def fetch_investing_com(timeout=10):
+    # news_25 = Stock Market News, news_14 = Economy News.
+    return _fetch_generic_rss_multi([
+        "https://www.investing.com/rss/news_25.rss",
+        "https://www.investing.com/rss/news_14.rss",
+    ], "Investing.com", timeout=timeout)
+
+
+def fetch_nasdaq_news(timeout=10):
+    return _fetch_generic_rss_multi([
+        "https://www.nasdaq.com/feed/rssoutbound?category=Markets",
+        "https://www.nasdaq.com/feed/rssoutbound?category=Stocks",
+    ], "Nasdaq", timeout=timeout)
+
+
+def fetch_zerohedge(timeout=10):
+    return _fetch_generic_rss("https://feeds.feedburner.com/zerohedge/feed", "Zero Hedge", timeout=timeout)
+
+
+def fetch_bbc_business(timeout=10):
+    return _fetch_generic_rss("https://feeds.bbci.co.uk/news/business/rss.xml", "BBC", timeout=timeout)
+
+
+def fetch_business_insider(timeout=10):
+    return _fetch_generic_rss("https://feeds.businessinsider.com/custom/all", "Business Insider", timeout=timeout)
+
+
+def fetch_axios(timeout=10):
+    return _fetch_generic_rss("https://api.axios.com/feed/", "Axios", timeout=timeout)
+
+
+# ---------------------------------------------------------------------------
+# Full-article extraction for the Market Feed pop-up
+# ---------------------------------------------------------------------------
+# Paywalled outlets are never fetched (no paywall workarounds): the pop-up
+# shows their summary + link. Everything else is attempted; if the site
+# blocks the request or the extracted text is too thin, the pop-up falls
+# back to the summary.
+PAYWALLED_SOURCES = {"WSJ", "MarketWatch", "Bloomberg", "NYT", "Financial Times", "Barchart"}
+# Sources whose pages consistently refuse server requests - skip the attempt.
+BLOCKED_SOURCES = {"CNBC", "Investing.com", "Seeking Alpha"}
+# Full text already in hand (feed item carries it, or it's the post itself).
+INLINE_FULL_SOURCES = {"Trump's Truths"}
+
+ARTICLE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def full_text_possible(item):
+    src = item.get("source")
+    if item.get("content") or src in INLINE_FULL_SOURCES:
+        return True
+    return src not in PAYWALLED_SOURCES and src not in BLOCKED_SOURCES
+
+
+def fetch_article_text(url, timeout=12, max_words=5000):
+    """Download an article page and extract the readable body text.
+    Returns (text, error). Text is one paragraph per line."""
+    import trafilatura  # imported lazily so the rest of the app doesn't depend on it
+    try:
+        resp = _session.get(url, headers=ARTICLE_HEADERS, timeout=timeout, allow_redirects=True)
+        if resp.status_code != 200:
+            return "", f"HTTP {resp.status_code}"
+        text = trafilatura.extract(
+            resp.text, url=resp.url, favor_precision=True,
+            include_comments=False, include_tables=False,
+        ) or ""
+    except Exception as exc:
+        return "", str(exc)
+    paras = [p.strip() for p in text.split("\n") if p.strip()]
+    out, words = [], 0
+    for para in paras:
+        out.append(para)
+        words += len(para.split())
+        if words >= max_words:
+            break
+    text = "\n".join(out)
+    if len(text.split()) < 60:
+        return "", "too little text extracted"
+    return text, None
+
+
 def fetch_trump_truths(timeout=10, limit=40):
     # Donald Trump's Truth Social posts ("Trump's Truths"), via the public
     # trumpstruth.org archive RSS. Truth Social's own API
@@ -418,11 +568,29 @@ def fetch_trump_truths(timeout=10, limit=40):
         return [], f"{label}: {exc}"
 
 
+def _published_ts(it):
+    """Epoch seconds for an item's published string (RFC 2822 or ISO 8601), tz-aware."""
+    from email.utils import parsedate_to_datetime
+    raw = (it.get("published") or "").strip()
+    if not raw:
+        return 0
+    try:
+        return parsedate_to_datetime(raw).timestamp()
+    except Exception:
+        pass
+    try:
+        return _dt.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0
+
+
 def fetch_all_news_multi(tickers, max_workers=10):
     """
     Combines per-ticker Yahoo news, Yahoo top stories, CNBC, MarketWatch,
     Fed press releases, Bloomberg, Fox Business, Barchart Options News,
-    WSJ Markets, and Trump's Truth Social posts into one deduped, time-sorted list.
+    WSJ Markets, Trump's Truth Social posts, NYT, FT, Seeking Alpha,
+    Investing.com, Nasdaq, Zero Hedge, BBC, Business Insider and Axios into
+    one deduped, time-sorted list.
     """
     all_items = []
     errors = []
@@ -435,7 +603,7 @@ def fetch_all_news_multi(tickers, max_workers=10):
             if err:
                 errors.append(err)
 
-    for fetcher in (
+    outlet_fetchers = (
         fetch_yahoo_top_stories,
         fetch_cnbc_top_news,
         fetch_marketwatch_top_stories,
@@ -445,11 +613,23 @@ def fetch_all_news_multi(tickers, max_workers=10):
         fetch_barchart_options_news,
         fetch_wsj_markets,
         fetch_trump_truths,
-    ):
-        items, err = fetcher()
-        all_items.extend(items)
-        if err:
-            errors.append(err)
+        fetch_nyt_business,
+        fetch_ft_markets,
+        fetch_seeking_alpha,
+        fetch_investing_com,
+        fetch_nasdaq_news,
+        fetch_zerohedge,
+        fetch_bbc_business,
+        fetch_business_insider,
+        fetch_axios,
+    )
+    # Outlet feeds run in parallel (18 feeds sequentially could stack up
+    # several 10s timeouts on a bad day).
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for items, err in ex.map(lambda f: f(), outlet_fetchers):
+            all_items.extend(items)
+            if err:
+                errors.append(err)
 
     seen = set()
     deduped = []
@@ -460,13 +640,7 @@ def fetch_all_news_multi(tickers, max_workers=10):
         seen.add(key)
         deduped.append(it)
 
-    def _sort_key(it):
-        try:
-            return time.mktime(time.strptime(it["published"][:25], "%a, %d %b %Y %H:%M:%S"))
-        except Exception:
-            return 0
-
-    deduped.sort(key=_sort_key, reverse=True)
+    deduped.sort(key=_published_ts, reverse=True)
     return deduped, errors
 
 

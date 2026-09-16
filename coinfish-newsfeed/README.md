@@ -6,7 +6,7 @@ Personal, local-only news dashboard modeled on the Stock Trader Network newsfeed
 
 ```
 cd coinfish-newsfeed
-pip install flask flask-cors requests feedparser yfinance --break-system-packages
+pip install flask flask-cors requests feedparser yfinance trafilatura --break-system-packages
 python app.py
 ```
 
@@ -55,3 +55,11 @@ STN's feed is built on paid wire access: Benzinga's real API, PR Newswire/GlobeN
 ## Editing the watchlist
 
 Edit the `WATCHLIST` list at the top of `app.py`. It's a plain Python list, not imported from the scanner, so this tool doesn't drag in pandas/numpy/bs4 just to get ticker names.
+
+## Login and full-article reading (added 2026-09-16)
+
+- **Login:** set the `NEWSFEED_PASSWORD` environment variable (Railway service > Variables) to put the whole site behind a password page. Sessions last 90 days. Changing the password signs everyone out. Sign out at `/logout`.
+- **Full articles in the pop-up:** clicking a Market Feed headline opens a pop-up. For sources that allow it (Fox Business, Yahoo Finance, Federal Reserve, Nasdaq, Zero Hedge, BBC, Business Insider, Axios, Trump's Truths) the full article text is loaded into the pop-up via `/api/article`. Paywalled outlets (WSJ, MarketWatch, Bloomberg, NYT, Financial Times) are never fetched, and CNBC / Investing.com / Seeking Alpha block server requests, so those show the summary plus a link.
+- **Full text only works with the login on.** With `NEWSFEED_PASSWORD` unset, `/api/article` refuses to serve article text, so other outlets' full articles are never shown on an open site.
+- Article text is extracted with `trafilatura` and cached in memory for 6 hours.
+- Added outlets: NYT (Business + Economy), Financial Times (Markets), Seeking Alpha (Market Currents), Investing.com (Stock Market + Economy), Nasdaq (Markets + Stocks), Zero Hedge, BBC Business, Business Insider, Axios. Business Insider and Axios only offer general feeds, so some non-market stories come through from those two.
