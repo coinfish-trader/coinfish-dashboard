@@ -2821,7 +2821,24 @@ async function manualRefresh() {
   finally { btn.disabled = false; btn.classList.remove("spinning"); }
 }
 
+// Reload the page when a new version has been deployed (tabs left open for
+// hours otherwise keep running the old code while only the data refreshes).
+let pageVersion = null;
+async function checkForNewVersion() {
+  try {
+    const j = await getJSON("/api/version");
+    if (!j.version || j.version === "unknown") return;
+    if (pageVersion === null) { pageVersion = j.version; return; }
+    if (j.version !== pageVersion) {
+      const modal = document.getElementById("newsModal");
+      if (modal && !modal.hidden) return;  // don't yank a story out from under the reader
+      location.reload();
+    }
+  } catch (e) { /* ignore */ }
+}
+
 async function loadAll() {
+  checkForNewVersion();
   try {
     await Promise.all([loadTape(), loadNews(), loadMovers(), loadMarketCap(), loadHeatmap(), loadFilings(), loadCalendar(), loadMacro()]);
     setStatus(true);

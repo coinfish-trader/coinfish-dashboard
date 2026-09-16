@@ -274,6 +274,25 @@ def index():
     return send_from_directory(".", "newsfeed.html")
 
 
+def _page_version():
+    # Fingerprint of the page actually being served. Open tabs poll this and
+    # reload themselves when it changes, so a tab left open across a deploy
+    # doesn't keep running old code.
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "newsfeed.html"), "rb") as fh:
+            return hashlib.sha1(fh.read()).hexdigest()[:12]
+    except OSError:
+        return "unknown"
+
+
+PAGE_VERSION = _page_version()
+
+
+@app.route("/api/version")
+def version():
+    return jsonify({"version": PAGE_VERSION, "auth": AUTH_ENABLED})
+
+
 @app.route("/api/health")
 def health():
     return jsonify({"status": "ok", "watchlist_size": len(WATCHLIST), "time": datetime.now().isoformat()})
