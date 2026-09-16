@@ -162,6 +162,41 @@ def fetch_sec_form4_recent(limit=25, timeout=12):
         return [], f"SEC full-text search: {exc}"
 
 
+
+# ---------------------------------------------------------------------------
+# Article preview helpers (used by the Market Feed pop-up)
+# ---------------------------------------------------------------------------
+
+def _clean_text(raw, limit=600):
+    """RSS description -> plain text preview, trimmed to `limit` chars."""
+    if not raw:
+        return ""
+    text = html.unescape(re.sub(r"<[^>]+>", " ", raw))
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > limit:
+        text = text[:limit - 3].rstrip() + "..."
+    return text
+
+
+def _entry_image(e):
+    """First usable image URL on a feed entry (media:content / thumbnail / enclosure), or None."""
+    for key in ("media_content", "media_thumbnail"):
+        for m in e.get(key) or []:
+            url = m.get("url")
+            if url and url.startswith("http"):
+                return url
+    for link in e.get("links") or []:
+        if (link.get("type") or "").startswith("image/") and link.get("href"):
+            return link["href"]
+    return None
+
+
+def _preview_fields(e):
+    return {
+        "summary": _clean_text(e.get("summary") or e.get("description")),
+        "image": _entry_image(e),
+    }
+
 # ---------------------------------------------------------------------------
 # Yahoo Finance RSS - per-ticker + general market
 # ---------------------------------------------------------------------------
@@ -180,7 +215,8 @@ def fetch_yahoo_ticker_news(ticker, timeout=10):
                 "headline": e.get("title"),
                 "link": e.get("link"),
                 "published": e.get("published"),
-                "source": "Yahoo Finance",
+                "source": "Yahoo Finance","source": "Yahoo Finance",
+                **_preview_fields(e),
             })
         return out, None
     except Exception as exc:
@@ -201,7 +237,8 @@ def fetch_yahoo_top_stories(timeout=10):
                 "headline": e.get("title"),
                 "link": e.get("link"),
                 "published": e.get("published"),
-                "source": "Yahoo Finance",
+                "source": "Yahoo Finance","source": "Yahoo Finance",
+                **_preview_fields(e),
             })
         return out, None
     except Exception as exc:
@@ -264,6 +301,7 @@ def _fetch_generic_rss(url, source_label, timeout=10):
                 "link": e.get("link"),
                 "published": e.get("published"),
                 "source": source_label,
+                **_preview_fields(e),
             })
         return out, None
     except Exception as exc:
@@ -341,7 +379,8 @@ def fetch_trump_truths(timeout=10, limit=40):
     # within minutes of a post.
     #
     # Many archive items are titled "[No Title] - Post from ...", so the post
-    # text (description) is used as the headline. Empty posts (image/video
+    # text (description) is used as the headline (trimmed to 160 chars for
+    # the list; the full post goes in `summary` for the pop-up). Empty posts (image/video
     # only) and bare "RT: <url>" reposts are skipped as zero-signal.
     # Link points at the original truthsocial.com post when available.
     url = "https://www.trumpstruth.org/feed"
@@ -362,11 +401,12 @@ def fetch_trump_truths(timeout=10, limit=40):
                     text = title
             if not text or re.fullmatch(r"RT:\s*\S+", text):
                 continue
-            if len(text) > 280:
-                text = text[:277].rstrip() + "..."
+            headline = text if len(text) <= 160 else text[:157].rstrip() + "..."
             out.append({
                 "ticker": None,
-                "headline": text,
+                "headline": headline,
+                "summary": _clean_text(text, limit=3000),
+                "image": _entry_image(e),
                 "link": e.get("truth_originalurl") or e.get("link"),
                 "published": e.get("published"),
                 "source": label,

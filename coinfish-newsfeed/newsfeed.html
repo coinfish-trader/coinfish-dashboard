@@ -601,7 +601,79 @@
     letter-spacing: 0.05em;
   }
   /* Trump's Truths: gold rail so policy posts stand out in the mixed feed */
-  .feed-item.truth { box-shadow: inset 3px 0 0 var(--gold-bright); }
+  .feed-item.truth { box-shadow: inset 3px 0 0 var(--gold-bright); padding-left: 10px; }
+  /* Mobile: long unbroken strings (URLs in Truth posts) must wrap instead of
+     stretching the grid column past the screen edge. */
+  .layout > * { min-width: 0; }
+  .feed-item { cursor: pointer; }
+  .feed-item .body { flex: 1 1 auto; min-width: 0; }
+  .feed-item .body a { overflow-wrap: anywhere; word-break: break-word; }
+  @media (max-width: 600px) {
+    .feed-item { gap: 8px; }
+    .feed-item .time { flex-basis: 48px; }
+    .feed-item .ticker-tag { min-width: 26px; }
+    .layout { padding: 12px 10px 48px; }
+  }
+
+  /* Market Feed article pop-up */
+  .news-modal-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(3, 10, 20, 0.62);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .news-modal-overlay[hidden] { display: none; }
+  .news-modal {
+    position: relative;
+    width: 100%; max-width: 560px; max-height: 86vh; overflow-y: auto;
+    background: var(--navy-800);
+    border: 1px solid var(--gold);
+    border-radius: 12px;
+    padding: 20px 20px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+    color: var(--white);
+  }
+  body.light-theme .news-modal-overlay { background: rgba(10, 35, 66, 0.35); }
+  .news-modal-close {
+    position: absolute; top: 10px; right: 10px;
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--line-strong); background: transparent;
+    color: var(--muted); font-size: 0.95rem; cursor: pointer;
+  }
+  .news-modal-close:hover { color: var(--teal-bright); border-color: var(--teal-bright); }
+  .news-modal-meta {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    font-size: 0.72rem; color: var(--muted);
+    margin-right: 36px; margin-bottom: 10px;
+  }
+  .news-modal-source {
+    color: var(--teal-bright); text-transform: uppercase;
+    letter-spacing: 0.05em; font-weight: 700;
+  }
+  .news-modal.truth .news-modal-source { color: var(--gold-bright); }
+  .news-modal-ticker { display: inline-flex; align-items: center; gap: 5px; color: var(--white); font-weight: 600; }
+  .news-modal h3 {
+    margin: 0 0 12px; font-size: 1.08rem; line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .news-modal-img {
+    display: block; width: 100%; max-height: 240px; object-fit: cover;
+    border-radius: 8px; margin-bottom: 12px; background: var(--navy-700);
+  }
+  .news-modal-body {
+    font-size: 0.9rem; line-height: 1.55; color: var(--off-white);
+    white-space: pre-line; overflow-wrap: anywhere; margin: 0 0 16px;
+  }
+  .news-modal-body.empty-preview { color: var(--muted); font-style: italic; }
+  .news-modal-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 100px;
+    background: linear-gradient(100deg, var(--teal-bright), var(--gold-bright));
+    color: var(--navy-900); font-weight: 700; font-size: 0.82rem;
+    text-decoration: none;
+  }
+  body.light-theme .news-modal-link { color: #061629; }
+  .news-modal-link:hover { filter: brightness(1.08); }
   .feed-item.truth .source { color: var(--gold-bright); }
 
   /* Biggest Pre-Market Movers */
@@ -1362,6 +1434,16 @@
 </div>
 
 <div id="econPopup"></div>
+<div id="newsModal" class="news-modal-overlay" hidden>
+  <div class="news-modal" role="dialog" aria-modal="true" aria-labelledby="newsModalTitle">
+    <button type="button" class="news-modal-close" aria-label="Close">✕</button>
+    <div class="news-modal-meta" id="newsModalMeta"></div>
+    <h3 id="newsModalTitle"></h3>
+    <img id="newsModalImg" class="news-modal-img" alt="" hidden>
+    <p id="newsModalBody" class="news-modal-body"></p>
+    <a id="newsModalLink" class="news-modal-link" target="_blank" rel="noopener"></a>
+  </div>
+</div>
 
 <script>
 const API = ""; // same origin
@@ -1672,6 +1754,80 @@ function refreshFilterActive(wrap, val) {
   wrap.querySelectorAll(".pill").forEach(b => b.classList.toggle("active", b.dataset.filter === val));
 }
 
+let renderedNews = [];
+
+const NEWS_LINK_LABELS = {
+  "Trump's Truths": "View on Truth Social",
+  "Federal Reserve": "Read on FederalReserve.gov",
+};
+
+function openNewsModal(n) {
+  const overlay = document.getElementById("newsModal");
+  const card = overlay.querySelector(".news-modal");
+  const isTruth = n.source === "Trump's Truths";
+  card.classList.toggle("truth", isTruth);
+
+  let when = "";
+  const d = new Date(n.published);
+  if (!isNaN(d)) when = timeAgo(n.published) + " · " + d.toLocaleString([], {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
+  document.getElementById("newsModalMeta").innerHTML =
+    `<span class="news-modal-source">${esc(n.source)}</span>` +
+    (n.ticker ? `<span class="news-modal-ticker">${tickerLogoHTML(n.ticker, 16)} ${esc(n.ticker)}</span>` : "") +
+    (when ? `<span>${esc(when)}</span>` : "");
+
+  const body = document.getElementById("newsModalBody");
+  const summary = (n.summary || "").trim();
+  // Truth posts: the full post is the summary, so don't repeat a trimmed headline above it.
+  document.getElementById("newsModalTitle").textContent = isTruth ? "Truth Social post" : (n.headline || "");
+  body.textContent = summary || "No preview available from this source. Use the link below to read the full article.";
+  body.classList.toggle("empty-preview", !summary);
+
+  const img = document.getElementById("newsModalImg");
+  if (n.image) {
+    img.hidden = false;
+    img.onerror = () => { img.hidden = true; };
+    img.src = n.image;
+  } else {
+    img.hidden = true;
+    img.removeAttribute("src");
+  }
+
+  const link = document.getElementById("newsModalLink");
+  link.href = n.link || "#";
+  link.hidden = !n.link;
+  link.textContent = (NEWS_LINK_LABELS[n.source] || ("Read on " + n.source)) + " ↗";
+
+  overlay.hidden = false;
+  document.body.style.overflow = "hidden";
+  card.scrollTop = 0;
+  overlay.querySelector(".news-modal-close").focus({preventScroll: true});
+}
+
+function closeNewsModal() {
+  const overlay = document.getElementById("newsModal");
+  if (overlay.hidden) return;
+  overlay.hidden = true;
+  document.body.style.overflow = "";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const feed = document.getElementById("newsFeed");
+  feed.addEventListener("click", (ev) => {
+    const row = ev.target.closest(".feed-item");
+    if (!row) return;
+    // Ctrl/Cmd/Shift/middle-click on the headline still opens the source in a new tab.
+    if (ev.target.closest("a") && (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button !== 0)) return;
+    ev.preventDefault();
+    const n = renderedNews[Number(row.dataset.idx)];
+    if (n) openNewsModal(n);
+  });
+  const overlay = document.getElementById("newsModal");
+  overlay.addEventListener("click", (ev) => {
+    if (ev.target === overlay || ev.target.closest(".news-modal-close")) closeNewsModal();
+  });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeNewsModal(); });
+});
+
 function renderNews() {
   let list = newsFilter === "all" ? allNews : allNews.filter(n => n.source === newsFilter);
   if (searchTerm) {
@@ -1681,8 +1837,9 @@ function renderNews() {
   const el = document.getElementById("newsFeed");
   document.getElementById("newsCount").textContent = list.length + (searchTerm ? " matching" : " stories");
   if (!list.length) { el.innerHTML = '<div class="empty">No headlines match.</div>'; return; }
-  el.innerHTML = list.slice(0, 80).map(n => `
-    <div class="feed-item${n.source === "Trump's Truths" ? " truth" : ""}">
+  renderedNews = list.slice(0, 80);
+  el.innerHTML = renderedNews.map((n, i) => `
+    <div class="feed-item${n.source === "Trump's Truths" ? " truth" : ""}" data-idx="${i}">
       <div class="time">${esc(timeAgo(n.published))}</div>
       <div class="ticker-tag">${tickerLogoHTML(n.ticker, 22)}</div>
       <div class="body">
