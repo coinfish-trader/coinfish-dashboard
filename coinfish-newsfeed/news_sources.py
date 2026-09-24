@@ -1221,13 +1221,33 @@ def _yf_prev_close_retry(ticker, retries=2, base_delay=0.6):
     bar once that session is fully closed, so during premarket the last row
     is always the correct, most-recently-completed close - no separate
     "current vs previous" field to get confused about.
+
+        BUG FIX 2026-09-24: the note above ("Yahoo only writes a daily bar once
+    that session is fully closed") is wrong DURING an open session - Yahoo
+    does carry today's in-progress bar, and its Close is simply the current
+    price. So from the opening bell onward this returned today's live price
+    as the "previous" close, every %-change computed as price minus itself,
+    and the tape, Sector Performance, Heatmap and Movers all showed a flat
+    0.00% across the board. It only looked right premarket (no bar for today
+    yet). Fix: drop the last bar when it is dated today in Eastern time, so
+    the baseline is always the last COMPLETED session.
     """
     last_exc = None
+    today_et = _dt.now(_ET_ZONE).date()
     for attempt in range(retries):
         try:
-            daily = yf.Ticker(ticker).history(period="5d", interval="1d")
+            daily = yf.Ticker(ticker).history(period="10d", interval="1d")
             if daily is not None and not daily.empty:
-                close = daily["Close"].iloc[-1]
+                closes = daily["Close"]
+                idx = -1
+                try:
+                    stamp = daily.index[-1]
+                    bar_date = stamp.date() if hasattr(stamp, "date") else None
+                    if bar_date == today_et and len(closes) > 1:
+                        idx = -2  # today's partial bar - use the prior completed session
+                except Exception:
+                    idx = -1
+                close = closes.iloc[idx]
                 if close is None or (isinstance(close, float) and close != close):  # NaN check
                     last_exc = "empty last daily bar"
                 else:
