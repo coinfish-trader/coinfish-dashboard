@@ -244,12 +244,18 @@
   }
   .macro-item.clickable:hover { background: rgba(255,255,255,0.04); }
   body.light-theme .macro-item.clickable:hover { background: rgba(10,35,66,0.04); }
-  .macro-item.rate-active {
-    background: rgba(255,255,255,0.06);
-    box-shadow: inset 0 0 0 1px var(--gold-bright);
+  .rate-modal { max-width: 560px; }
+  .rate-modal-head { margin-right: 36px; margin-bottom: 14px; }
+  .rate-modal-head h3 {
+    margin: 0 0 4px; font-size: 1.05rem; font-family: 'Inter', sans-serif;
+    color: var(--gold-bright);
   }
-  body.light-theme .macro-item.rate-active { background: rgba(10,35,66,0.05); }
-  .rate-info-panel { margin-top: 14px; max-width: none; }
+  .rate-modal-value {
+    display: flex; align-items: baseline; gap: 8px;
+    font-family: 'Inter', sans-serif; font-weight: 700; font-size: 1.3rem;
+  }
+  .rate-modal .fg-info-section { margin-bottom: 12px; }
+  .rate-modal .fg-info-section:last-child { margin-bottom: 0; }
   .macro-item .value-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .bps { font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
   .bps.up { color: var(--red); }      /* yields up = bonds sold off */
@@ -1511,6 +1517,17 @@
 </div>
 
 <div id="econPopup"></div>
+<div id="rateModal" class="news-modal-overlay" hidden>
+  <div class="news-modal rate-modal" role="dialog" aria-modal="true" aria-labelledby="rateModalTitle">
+    <button type="button" class="news-modal-close" aria-label="Close">✕</button>
+    <div class="rate-modal-head">
+      <h3 id="rateModalTitle"></h3>
+      <div id="rateModalValue" class="rate-modal-value"></div>
+    </div>
+    <div id="rateModalBody"></div>
+  </div>
+</div>
+
 <div id="newsModal" class="news-modal-overlay" hidden>
   <div class="news-modal" role="dialog" aria-modal="true" aria-labelledby="newsModalTitle">
     <button type="button" class="news-modal-close" aria-label="Close">✕</button>
@@ -1800,7 +1817,7 @@ function fedRead(fed) {
 
 const FED_TRADE = "The target range only changes on FOMC days, so it is your baseline rather than a daily signal. What matters for you is the meeting itself: implied vol builds into the announcement and drops right after, so premium sold just before a meeting is priced for a move that usually does not come, while holding a short spread through the statement is the single most common way a quiet position turns into a tested one.";
 
-let selectedRateKey = null;
+let openRateKey = null;
 let lastMacroData = {};
 
 function rateDetails(key) {
@@ -1812,57 +1829,63 @@ function rateDetails(key) {
     const stamp = y.source === "treasury"
       ? `Treasury's official daily curve, published after the close on ${shortDate(y.as_of)}. There is no free live feed for this tenor, so during the session it shows the prior day.`
       : "Live intraday, with the change measured against yesterday's close.";
-    return {title: `${key} Treasury Yield`, value: `${y.yield_pct}%`,
+    return {title: `${key} Treasury Yield`, value: `${y.yield_pct}%`, chip: bpsChip(y.change_bps),
             what: RATE_WHAT[key], read: yieldRead(y), trade: yieldTrade(y), source: stamp};
   }
   const sp = spreads.find(v => v.label === key);
   if (sp) {
-    return {title: `${key} Curve Spread`, value: `${sp.bps > 0 ? "+" : ""}${sp.bps}bp`,
+    return {title: `${key} Curve Spread`, value: `${sp.bps > 0 ? "+" : ""}${sp.bps}bp`, chip: bpsChip(sp.change_bps),
             what: RATE_WHAT[key], read: spreadRead(sp), trade: SPREAD_TRADE[key] || "",
-            source: `Both legs come from Treasury's official daily curve for ${shortDate(sp.as_of)}, so the two yields are measured at the same moment. The live 10-Year above can differ from the 10-Year used here during the session.`};
+            source: `Both legs come from Treasury's official daily curve for ${shortDate(sp.as_of)}, so the two yields are measured at the same moment. The live 10-Year in the snapshot can differ from the 10-Year used here during the session.`};
   }
   if (key === "Fed Funds Target" && fed.target_from !== null && fed.target_from !== undefined) {
-    return {title: "Fed Funds Target Range", value: `${fed.target_from.toFixed(2)}–${fed.target_to.toFixed(2)}%`,
+    return {title: "Fed Funds Target Range", value: `${fed.target_from.toFixed(2)}–${fed.target_to.toFixed(2)}%`, chip: "",
             what: RATE_WHAT[key], read: fedRead(fed), trade: FED_TRADE,
             source: `New York Fed reference rates, effective ${shortDate(fed.as_of)}.`};
   }
   return null;
 }
 
-function renderRateInfoPanel() {
-  const panel = document.getElementById("rateInfoPanel");
-  if (!panel) return;
-  if (!selectedRateKey) {
-    panel.innerHTML = '<div class="fg-info-empty">Click any yield, curve spread or the Fed row above to see what it means and how it applies to your trades.</div>';
-    return;
-  }
-  const d = rateDetails(selectedRateKey);
-  if (!d) { panel.innerHTML = '<div class="fg-info-empty">No data for this one right now.</div>'; return; }
-  panel.innerHTML = `
-    <div class="fg-info-head">
-      <span class="fg-info-label" style="color:var(--gold-bright)">${esc(d.title)}</span>
-      <span class="fg-info-score" style="color:var(--gold-bright)">${esc(d.value)}</span>
-    </div>
+function openRateModal(key) {
+  const d = rateDetails(key);
+  if (!d) return;
+  openRateKey = key;
+  const overlay = document.getElementById("rateModal");
+  document.getElementById("rateModalTitle").textContent = d.title;
+  document.getElementById("rateModalValue").innerHTML = `${esc(d.value)} ${d.chip}`;
+  document.getElementById("rateModalBody").innerHTML = `
     <div class="fg-info-section"><span class="fg-info-kicker">What it is</span><p>${esc(d.what)}</p></div>
     <div class="fg-info-section"><span class="fg-info-kicker">Today's read</span><p>${esc(d.read)}</p></div>
     ${d.trade ? `<div class="fg-info-section fg-info-trade"><span class="fg-info-kicker">What it means for your trades</span><p>${esc(d.trade)}</p></div>` : ""}
-    <div class="fg-info-section"><span class="fg-info-kicker">Where the number comes from</span><p>${esc(d.source)}</p></div>
-  `;
+    <div class="fg-info-section"><span class="fg-info-kicker">Where the number comes from</span><p>${esc(d.source)}</p></div>`;
+  overlay.hidden = false;
+  document.body.style.overflow = "hidden";
+  overlay.querySelector(".news-modal").scrollTop = 0;
+  overlay.querySelector(".news-modal-close").focus({preventScroll: true});
 }
 
-function highlightActiveRateItem() {
-  document.querySelectorAll(".macro-item[data-rate]").forEach(el => {
-    el.classList.toggle("rate-active", el.dataset.rate === selectedRateKey);
-  });
+function closeRateModal() {
+  const overlay = document.getElementById("rateModal");
+  if (!overlay || overlay.hidden) return;
+  overlay.hidden = true;
+  openRateKey = null;
+  if (document.getElementById("newsModal").hidden) document.body.style.overflow = "";
+}
+
+// The macro panel repolls every 90s; keep an open pop-out on the fresh numbers.
+function refreshOpenRateModal() {
+  if (openRateKey && !document.getElementById("rateModal").hidden) openRateModal(openRateKey);
 }
 
 document.addEventListener("click", function(e) {
   const item = e.target.closest(".macro-item[data-rate]");
-  if (!item) return;
-  selectedRateKey = (selectedRateKey === item.dataset.rate) ? null : item.dataset.rate;
-  renderRateInfoPanel();
-  highlightActiveRateItem();
+  if (item) { openRateModal(item.dataset.rate); return; }
+  const overlay = document.getElementById("rateModal");
+  if (!overlay || overlay.hidden) return;
+  if (e.target === overlay || e.target.closest("#rateModal .news-modal-close")) closeRateModal();
 });
+
+document.addEventListener("keydown", function(e) { if (e.key === "Escape") closeRateModal(); });
 
 function bpsChip(bps) {
   if (bps === null || bps === undefined) return "";
@@ -1967,15 +1990,12 @@ async function loadMacro() {
       </div>`;
   }
 
-  const ratesPanelHtml = statsHtml
-    ? '<div class="fg-info-panel rate-info-panel" id="rateInfoPanel"></div>' : "";
-  const html = fgHtml + (statsHtml ? `<div class="macro-stats-row">${statsHtml}</div>${ratesPanelHtml}` : "");
+  const html = fgHtml + (statsHtml ? `<div class="macro-stats-row">${statsHtml}</div>` : "");
   grid.innerHTML = html || '<div class="empty">Macro data unavailable.</div>';
   // Buttons/panel are rebuilt each poll. Re-apply any open selection so it doesn't blink shut.
   renderFgInfoPanel();
   highlightActiveFgBtn();
-  renderRateInfoPanel();
-  highlightActiveRateItem();
+  refreshOpenRateModal();
 
   const sectorRow = document.getElementById("sectorRow");
   const sectors = (j.sectors || []).filter(s => s.price !== null)
