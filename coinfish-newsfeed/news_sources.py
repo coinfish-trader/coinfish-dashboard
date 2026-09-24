@@ -1602,7 +1602,16 @@ def fetch_treasury_yields():
     out = []
     for label, ticker, curve_key in YIELD_ROWS:
         row = {"label": label, "ticker": ticker, "yield_pct": None, "change_bps": None,
-               "source": None, "as_of": None, "error": None}
+               "source": None, "as_of": None, "error": None,
+               # Same-day Treasury close values are kept alongside the live ones so
+               # curve spreads can be computed apples-to-apples (see build_yield_spreads).
+               "curve_pct": None, "curve_change_bps": None, "curve_date": curve_date}
+        curve_val = _curve_val(latest, curve_key)
+        if curve_val is not None:
+            row["curve_pct"] = round(curve_val, 3)
+            curve_prev = _curve_val(prior, curve_key)
+            if curve_prev is not None:
+                row["curve_change_bps"] = round((curve_val - curve_prev) * 100, 1)
         if ticker:
             try:
                 fast = yf.Ticker(ticker).fast_info
@@ -1615,34 +1624,36 @@ def fetch_treasury_yields():
                         row["change_bps"] = round((float(last) - float(prev_close)) * 100, 1)
             except Exception as exc:
                 row["error"] = str(exc)
-        if row["yield_pct"] is None:
-            val = _curve_val(latest, curve_key)
-            if val is not None:
-                row["yield_pct"] = round(val, 3)
-                row["source"] = "treasury"
-                row["as_of"] = curve_date
-                prev_val = _curve_val(prior, curve_key)
-                if prev_val is not None:
-                    row["change_bps"] = round((val - prev_val) * 100, 1)
+        if row["yield_pct"] is None and row["curve_pct"] is not None:
+            row["yield_pct"] = row["curve_pct"]
+            row["change_bps"] = row["curve_change_bps"]
+            row["source"] = "treasury"
+            row["as_of"] = curve_date
         out.append(row)
     return out
 
 
 def build_yield_spreads(yields):
     """Curve spreads in bps. 2s10s is the classic growth/recession read;
-    3m10y is the version the NY Fed's recession model uses."""
-    by_label = {y["label"]: y for y in yields if y.get("yield_pct") is not None}
+    3m10y is the version the NY Fed's recession model uses.
+
+    Both legs are taken from Treasury's official daily curve rather than the
+    live quotes, because 2Y has no live feed - mixing a live 10Y against a
+    day-old 2Y produced a spread (and a daily change) that was simply wrong
+    intraday. Apples-to-apples and a day old beats live and misleading.
+    """
+    by_label = {y["label"]: y for y in yields}
 
     def spread(long_label, short_label, name, note):
         a, b = by_label.get(long_label), by_label.get(short_label)
-        if not a or not b:
+        if not a or not b or a.get("curve_pct") is None or b.get("curve_pct") is None:
             return None
-        bps = round((a["yield_pct"] - b["yield_pct"]) * 100, 1)
+        bps = round((a["curve_pct"] - b["curve_pct"]) * 100, 1)
         change = None
-        if a.get("change_bps") is not None and b.get("change_bps") is not None:
-            change = round(a["change_bps"] - b["change_bps"], 1)
+        if a.get("curve_change_bps") is not None and b.get("curve_change_bps") is not None:
+            change = round(a["curve_change_bps"] - b["curve_change_bps"], 1)
         return {"label": name, "bps": bps, "change_bps": change,
-                "inverted": bps < 0, "note": note}
+                "inverted": bps < 0, "as_of": a.get("curve_date"), "note": note}
 
     out = [
         spread("10-Year", "2-Year", "2s10s", "10-Year minus 2-Year. Negative (inverted) has preceded every modern recession; steepening off an inversion is the part that usually coincides with trouble."),

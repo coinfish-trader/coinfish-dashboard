@@ -235,6 +235,21 @@
   }
   .term-contango { color: var(--green); }
   .term-backwardation { color: var(--red); }
+  .macro-item.clickable {
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 4px 6px;
+    margin: -4px -6px;
+    transition: background 0.12s ease;
+  }
+  .macro-item.clickable:hover { background: rgba(255,255,255,0.04); }
+  body.light-theme .macro-item.clickable:hover { background: rgba(10,35,66,0.04); }
+  .macro-item.rate-active {
+    background: rgba(255,255,255,0.06);
+    box-shadow: inset 0 0 0 1px var(--gold-bright);
+  }
+  body.light-theme .macro-item.rate-active { background: rgba(10,35,66,0.05); }
+  .rate-info-panel { margin-top: 14px; max-width: none; }
   .macro-item .value-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .bps { font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
   .bps.up { color: var(--red); }      /* yields up = bonds sold off */
@@ -1706,6 +1721,149 @@ function buildFgScaleSvg(score) {
     </svg>`;
 }
 
+// ---- Rate explainers (click a yield, spread or the Fed row) --------------
+// Same idea as the Fear & Greed sub-score panel: what it is, how to read
+// today's number, and what it means for selling premium on SPY/QQQ/IWM.
+const RATE_WHAT = {
+  "3-Month": "Where cash parks. The 3-month bill tracks the Fed's current policy rate almost one-for-one, so it sits still unless the Fed moves or the market starts pricing the next meeting differently.",
+  "2-Year": "The market's bet on the Fed over the next two years. It moves on rate expectations more than on growth, which is why it reacts hardest to CPI prints and Fed speak.",
+  "5-Year": "The belly of the curve. Part Fed expectations, part inflation view. It usually moves the most on a surprise because it sits between the two forces.",
+  "7-Year": "The other half of the belly, and the tenor auctions most often test for real demand. It tends to follow the 5-year and 10-year rather than lead.",
+  "10-Year": "The benchmark. It is the discount rate the market uses to value future earnings, so it matters more to stocks than any other point on the curve.",
+  "30-Year": "The long bond. Less about the Fed, more about long-run inflation, deficits and how much extra yield investors demand to lend for 30 years.",
+  "2s10s": "The 10-year minus the 2-year. The slope between what the Fed is expected to do and what the market thinks growth and inflation look like long term.",
+  "3m10s": "The 10-year minus the 3-month. The same slope idea measured against cash, and the version the New York Fed's own recession model runs on.",
+  "Fed Funds Target": "The range the FOMC tells banks to lend overnight within, plus EFFR: the rate fed funds actually traded at last night inside that range.",
+};
+
+function yieldRead(y) {
+  const b = y.change_bps;
+  if (b === null || b === undefined) return "No move available for today yet.";
+  const size = Math.abs(b);
+  const dir = b > 0 ? "up" : "down";
+  const priced = b > 0 ? "cheaper (prices fell)" : "richer (prices rose)";
+  let scale;
+  if (size < 3) scale = "A quiet day. Moves this small are noise, not a signal.";
+  else if (size < 8) scale = "A normal day's move.";
+  else if (size < 15) scale = "A big move. Something repriced: a data print, a Fed headline, or a weak auction.";
+  else scale = "A very large move. Days like this usually come with an equity selloff or a violent rotation.";
+  return `Yields are ${dir} ${size.toFixed(1)} basis points today, meaning these bonds got ${priced}. ${scale}`;
+}
+
+function yieldTrade(y) {
+  const b = y.change_bps || 0;
+  const base = {
+    "3-Month": "This is your risk-free comparison. When it sits near the top of the Fed's range, cash is a real competitor to the premium you collect, so a trade has to clear that bar to be worth the risk.",
+    "2-Year": "This is the tenor that jumps on CPI and Fed days. A sharp move here means the market just changed its mind about the Fed, and index vol usually follows within the session.",
+    "5-Year": "Big moves in the belly tend to show up as broad index moves rather than single-name moves, which is exactly the risk a short put spread on SPY or IWM carries.",
+    "7-Year": "Watch this one around its own auction. A poor 7-year sale pushes the whole belly higher in yield and drags the index lower into the close.",
+    "10-Year": "This is the one that matters for your short puts. Fast rises compress equity multiples, hit long-duration tech hardest, and are the usual trigger for the kind of index down day that tests a short strike.",
+    "30-Year": "Long-end selloffs signal a fiscal or inflation scare rather than a Fed move. They tend to come with weak breadth and a VIX pop, which is a poor time to be adding new short premium.",
+  }[y.label] || "";
+  if (Math.abs(b) >= 10) {
+    return base + " Today's move is large enough to take seriously: consider whether your short strikes have enough room before adding anything new.";
+  }
+  return base;
+}
+
+function spreadRead(sp) {
+  const bps = sp.bps;
+  const chg = sp.change_bps;
+  let state;
+  if (bps < 0) state = `Inverted by ${Math.abs(bps).toFixed(1)}bp: short money pays more than long money. Every modern US recession has been preceded by an inversion, but the lead time has run anywhere from 6 to 18 months, and stocks have often kept climbing through it.`;
+  else if (bps < 25) state = `Nearly flat at +${bps.toFixed(1)}bp. The market sees little difference between lending for two years and lending for ten, which usually means it expects the Fed to be cutting before long.`;
+  else if (bps < 100) state = `A normal but modest slope at +${bps.toFixed(1)}bp. This is the ordinary shape of the curve, not a warning by itself.`;
+  else state = `Steep at +${bps.toFixed(1)}bp. Long rates sit well above short rates, which usually reflects growth or inflation expectations, heavy Treasury supply, or both.`;
+  let move = "";
+  if (chg !== null && chg !== undefined && Math.abs(chg) >= 3) {
+    move = chg > 0
+      ? ` It steepened ${Math.abs(chg).toFixed(1)}bp today. Steepening driven by the long end selling off (bear steepening) is the version that tends to hurt stocks.`
+      : ` It flattened ${Math.abs(chg).toFixed(1)}bp today.`;
+  }
+  return state + move;
+}
+
+const SPREAD_TRADE = {
+  "2s10s": "The number itself is a slow signal, not a trade trigger. What matters day to day is the direction: sharp steepening from the long end usually lands with index weakness and a higher VIX, which widens the credit you collect but also raises the odds your short strike gets tested. The dangerous window historically is not the inversion itself but the re-steepening that follows it, which is when recessions and real drawdowns have tended to arrive.",
+  "3m10s": "This is the more reliable recession signal of the two, which makes it a position-size input rather than an entry signal. A deepening inversion here alongside a rising VIX argues for smaller size and wider spreads on your bull puts, because the tail you are short gets fatter in exactly that environment.",
+};
+
+function fedRead(fed) {
+  if (!fed || fed.effr === null || fed.effr === undefined) return "No Fed data right now.";
+  const mid = (fed.target_from + fed.target_to) / 2;
+  let where;
+  if (fed.effr >= fed.target_to - 0.03) where = "EFFR is pinned near the top of the range, which points to funding pressure in money markets. It is worth watching because it has preceded repo stress in the past.";
+  else if (fed.effr <= fed.target_from + 0.03) where = "EFFR is sitting near the bottom of the range, meaning cash is plentiful in the system.";
+  else where = `EFFR is sitting mid-range, ${(fed.effr - mid >= 0 ? "just above" : "just below")} the midpoint, which is the normal, quiet state.`;
+  return `The Fed's target range is ${fed.target_from.toFixed(2)}% to ${fed.target_to.toFixed(2)}%, and fed funds actually traded at ${fed.effr}%. ${where}`;
+}
+
+const FED_TRADE = "The target range only changes on FOMC days, so it is your baseline rather than a daily signal. What matters for you is the meeting itself: implied vol builds into the announcement and drops right after, so premium sold just before a meeting is priced for a move that usually does not come, while holding a short spread through the statement is the single most common way a quiet position turns into a tested one.";
+
+let selectedRateKey = null;
+let lastMacroData = {};
+
+function rateDetails(key) {
+  const yields = lastMacroData.yields || [];
+  const spreads = lastMacroData.yield_spreads || [];
+  const fed = lastMacroData.fed || {};
+  const y = yields.find(v => v.label === key);
+  if (y) {
+    const stamp = y.source === "treasury"
+      ? `Treasury's official daily curve, published after the close on ${shortDate(y.as_of)}. There is no free live feed for this tenor, so during the session it shows the prior day.`
+      : "Live intraday, with the change measured against yesterday's close.";
+    return {title: `${key} Treasury Yield`, value: `${y.yield_pct}%`,
+            what: RATE_WHAT[key], read: yieldRead(y), trade: yieldTrade(y), source: stamp};
+  }
+  const sp = spreads.find(v => v.label === key);
+  if (sp) {
+    return {title: `${key} Curve Spread`, value: `${sp.bps > 0 ? "+" : ""}${sp.bps}bp`,
+            what: RATE_WHAT[key], read: spreadRead(sp), trade: SPREAD_TRADE[key] || "",
+            source: `Both legs come from Treasury's official daily curve for ${shortDate(sp.as_of)}, so the two yields are measured at the same moment. The live 10-Year above can differ from the 10-Year used here during the session.`};
+  }
+  if (key === "Fed Funds Target" && fed.target_from !== null && fed.target_from !== undefined) {
+    return {title: "Fed Funds Target Range", value: `${fed.target_from.toFixed(2)}–${fed.target_to.toFixed(2)}%`,
+            what: RATE_WHAT[key], read: fedRead(fed), trade: FED_TRADE,
+            source: `New York Fed reference rates, effective ${shortDate(fed.as_of)}.`};
+  }
+  return null;
+}
+
+function renderRateInfoPanel() {
+  const panel = document.getElementById("rateInfoPanel");
+  if (!panel) return;
+  if (!selectedRateKey) {
+    panel.innerHTML = '<div class="fg-info-empty">Click any yield, curve spread or the Fed row above to see what it means and how it applies to your trades.</div>';
+    return;
+  }
+  const d = rateDetails(selectedRateKey);
+  if (!d) { panel.innerHTML = '<div class="fg-info-empty">No data for this one right now.</div>'; return; }
+  panel.innerHTML = `
+    <div class="fg-info-head">
+      <span class="fg-info-label" style="color:var(--gold-bright)">${esc(d.title)}</span>
+      <span class="fg-info-score" style="color:var(--gold-bright)">${esc(d.value)}</span>
+    </div>
+    <div class="fg-info-section"><span class="fg-info-kicker">What it is</span><p>${esc(d.what)}</p></div>
+    <div class="fg-info-section"><span class="fg-info-kicker">Today's read</span><p>${esc(d.read)}</p></div>
+    ${d.trade ? `<div class="fg-info-section fg-info-trade"><span class="fg-info-kicker">What it means for your trades</span><p>${esc(d.trade)}</p></div>` : ""}
+    <div class="fg-info-section"><span class="fg-info-kicker">Where the number comes from</span><p>${esc(d.source)}</p></div>
+  `;
+}
+
+function highlightActiveRateItem() {
+  document.querySelectorAll(".macro-item[data-rate]").forEach(el => {
+    el.classList.toggle("rate-active", el.dataset.rate === selectedRateKey);
+  });
+}
+
+document.addEventListener("click", function(e) {
+  const item = e.target.closest(".macro-item[data-rate]");
+  if (!item) return;
+  selectedRateKey = (selectedRateKey === item.dataset.rate) ? null : item.dataset.rate;
+  renderRateInfoPanel();
+  highlightActiveRateItem();
+});
+
 function bpsChip(bps) {
   if (bps === null || bps === undefined) return "";
   const cls = bps > 0 ? "up" : (bps < 0 ? "down" : "flat");
@@ -1721,6 +1879,7 @@ function shortDate(iso) {
 
 async function loadMacro() {
   const j = await getJSON("/api/macro");
+  lastMacroData = j;
   const grid = document.getElementById("macroGrid");
   const vix = j.vix || {};
   const yields = j.yields || [];
@@ -1768,7 +1927,7 @@ async function loadMacro() {
       ? `Treasury close ${esc(shortDate(y.as_of))}`
       : "live";
     statsHtml += `
-      <div class="macro-item">
+      <div class="macro-item clickable" data-rate="${esc(y.label)}">
         <span class="label">${esc(y.label)} Yield</span>
         <span class="value-row">
           <span class="value">${esc(y.yield_pct.toFixed ? y.yield_pct.toFixed(2) : y.yield_pct)}%</span>
@@ -1779,19 +1938,19 @@ async function loadMacro() {
   });
   (j.yield_spreads || []).forEach(sp => {
     statsHtml += `
-      <div class="macro-item spread${sp.inverted ? " inverted" : ""}" title="${esc(sp.note)}">
+      <div class="macro-item spread clickable${sp.inverted ? " inverted" : ""}" data-rate="${esc(sp.label)}">
         <span class="label">${esc(sp.label)}</span>
         <span class="value-row">
           <span class="value">${sp.bps > 0 ? "+" : ""}${esc(sp.bps)}bp</span>
           ${bpsChip(sp.change_bps)}
         </span>
-        <span class="stamp">${sp.inverted ? "inverted" : "steepness"}</span>
+        <span class="stamp">${sp.inverted ? "inverted" : "steepness"} · Treasury close ${esc(shortDate(sp.as_of))}</span>
       </div>`;
   });
   const fed = j.fed || {};
   if (fed.target_from !== null && fed.target_from !== undefined) {
     statsHtml += `
-      <div class="macro-item fed" title="The FOMC's current target range for fed funds, and EFFR: where fed funds actually traded overnight inside that range.">
+      <div class="macro-item fed clickable" data-rate="Fed Funds Target">
         <span class="label">Fed Funds Target</span>
         <span class="value-row">
           <span class="value">${esc(fed.target_from.toFixed(2))}–${esc(fed.target_to.toFixed(2))}%</span>
@@ -1808,11 +1967,15 @@ async function loadMacro() {
       </div>`;
   }
 
-  const html = fgHtml + (statsHtml ? `<div class="macro-stats-row">${statsHtml}</div>` : "");
+  const ratesPanelHtml = statsHtml
+    ? '<div class="fg-info-panel rate-info-panel" id="rateInfoPanel"></div>' : "";
+  const html = fgHtml + (statsHtml ? `<div class="macro-stats-row">${statsHtml}</div>${ratesPanelHtml}` : "");
   grid.innerHTML = html || '<div class="empty">Macro data unavailable.</div>';
   // Buttons/panel are rebuilt each poll. Re-apply any open selection so it doesn't blink shut.
   renderFgInfoPanel();
   highlightActiveFgBtn();
+  renderRateInfoPanel();
+  highlightActiveRateItem();
 
   const sectorRow = document.getElementById("sectorRow");
   const sectors = (j.sectors || []).filter(s => s.price !== null)
