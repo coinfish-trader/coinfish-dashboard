@@ -193,7 +193,7 @@ def fetch_pc_ratio_yfinance(ticker):
         total_call_oi = 0
         total_put_oi = 0
         used = 0
-        for exp in exps[:min(4, len(exps))]:
+        for exp in exps[:min(6, len(exps))]:
             try:
                 chain = t.option_chain(exp)
                 total_call_oi += int(chain.calls["openInterest"].fillna(0).sum())
@@ -304,8 +304,8 @@ def fetch_earnings_status(ticker):
     """
     Returns (earnings_date_iso_or_None, status).
     status values:
-      "clear"             -- earnings confirmed more than 21 days away (or > 7 days past)
-      "earn_risk"         -- earnings within the next 1-21 days
+      "clear"             -- earnings confirmed more than 45 days away (or > 7 days past)
+      "earn_risk"         -- earnings within the next 1-45 days (covers typical 30-45 DTE spread)
       "vol_crushed"       -- earnings in the last 7 days (IV already collapsed)
       "earn_date_unknown" -- date not found or API error; treat as potentially risky
     """
@@ -351,7 +351,7 @@ def fetch_earnings_status(ticker):
             status = "clear"
         elif -7 <= delta <= 0:
             status = "vol_crushed"
-        elif 1 <= delta <= 21:   # extended from 14 to 21 days
+        elif 1 <= delta <= 45:   # 45d covers a typical 30-45 DTE spread window
             status = "earn_risk"
         else:
             status = "clear"
