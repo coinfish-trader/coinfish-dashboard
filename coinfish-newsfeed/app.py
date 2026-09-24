@@ -210,6 +210,7 @@ CACHE_TTL = {
     "calendar": 60,      # short TTL so actuals (e.g. CPI) show up fast after release
     "tape": 30,
     "macro": 120,
+    "auctions": 1800,   # auction results publish once a day per security
     "movers": 60,
     "marketcap": 300,    # market cap barely moves intraday, longer TTL than movers
     "heatmap": 120,
@@ -223,6 +224,7 @@ _locks = {
     "calendar": threading.Lock(),
     "tape": threading.Lock(),
     "macro": threading.Lock(),
+    "auctions": threading.Lock(),
     "movers": threading.Lock(),
     "marketcap": threading.Lock(),
     "heatmap": threading.Lock(),
@@ -413,14 +415,27 @@ def filings():
 @app.route("/api/macro")
 def macro():
     def build():
+        yields = ns.fetch_treasury_yields()
         return {
             "vix": ns.fetch_vix_snapshot(),
-            "yields": ns.fetch_treasury_yields(),
+            "yields": yields,
+            "yield_spreads": ns.build_yield_spreads(yields),
+            "fed": ns.fetch_fed_rates(),
             "fomc": ns.get_fomc_status(),
             "sectors": ns.fetch_sector_heatmap(),
             "fear_greed": ns.fetch_fear_greed(),
         }
     data, ts = _cached("macro", CACHE_TTL["macro"], build)
+    return jsonify(data | {"as_of": ts})
+
+
+@app.route("/api/auctions")
+def auctions():
+    # Treasury only publishes auction results once a day per security, so a
+    # long TTL is plenty and keeps TreasuryDirect from being hammered.
+    def build():
+        return ns.fetch_treasury_auctions()
+    data, ts = _cached("auctions", CACHE_TTL["auctions"], build)
     return jsonify(data | {"as_of": ts})
 
 

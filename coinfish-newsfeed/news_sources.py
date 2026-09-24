@@ -1533,20 +1533,229 @@ TREASURY_TICKERS = [
     ("^IRX", "3-Month"), ("^FVX", "5-Year"), ("^TNX", "10-Year"), ("^TYX", "30-Year"),
 ]
 
+# Tenors shown in the macro snapshot, in curve order. 2-Year and 7-Year have no
+# reliable free intraday series (Yahoo's 2YY=F futures quote disagrees with the
+# cash curve by ~40bp), so they come from Treasury's official daily par yield
+# curve instead - a day-end number, flagged as such in the UI.
+YIELD_ROWS = [
+    ("3-Month", "^IRX", "BC_3MONTH"),
+    ("2-Year", None, "BC_2YEAR"),
+    ("5-Year", "^FVX", "BC_5YEAR"),
+    ("7-Year", None, "BC_7YEAR"),
+    ("10-Year", "^TNX", "BC_10YEAR"),
+    ("30-Year", "^TYX", "BC_30YEAR"),
+]
+
+TREASURY_CURVE_URL = ("https://home.treasury.gov/resource-center/data-chart-center/"
+                      "interest-rates/pages/xml?data=daily_treasury_yield_curve"
+                      "&field_tdr_date_value_month={month}")
+
+
+def fetch_treasury_curve(timeout=15):
+    """Treasury's official daily par yield curve: the last two published days.
+    Returns (latest_dict, prior_dict, latest_date_iso) - dicts keyed BC_2YEAR etc."""
+    rows = []
+    today = _dt.now()
+    months = [today.strftime("%Y%m")]
+    if today.day <= 5:  # early in the month, reach back for a prior business day
+        prev = (today.replace(day=1) - _timedelta(days=1))
+        months.append(prev.strftime("%Y%m"))
+    ns = {"a": "http://www.w3.org/2005/Atom",
+          "m": "http://schemas.microsoft.com/ado/2007/08/dataservices/metadata",
+          "d": "http://schemas.microsoft.com/ado/2007/08/dataservices"}
+    for month in months:
+        try:
+            resp = _session.get(TREASURY_CURVE_URL.format(month=month),
+                                headers=YAHOO_HEADERS, timeout=timeout)
+            if resp.status_code != 200:
+                continue
+            root = ET.fromstring(resp.content)
+            for entry in root.findall("a:entry", ns):
+                props = entry.find("a:content/m:properties", ns)
+                if props is None:
+                    continue
+                row = {child.tag.split("}")[1]: child.text for child in props}
+                if row.get("NEW_DATE"):
+                    rows.append(row)
+        except Exception:
+            continue
+    if not rows:
+        return None, None, None
+    rows.sort(key=lambda r: r["NEW_DATE"])
+    latest = rows[-1]
+    prior = rows[-2] if len(rows) > 1 else None
+    return latest, prior, latest["NEW_DATE"][:10]
+
+
+def _curve_val(row, key):
+    try:
+        return float(row.get(key)) if row and row.get(key) else None
+    except (TypeError, ValueError):
+        return None
+
 
 def fetch_treasury_yields():
+    """Yield per tenor with its day's move in basis points.
+    Intraday tenors come from yfinance (change vs. previous close); 2Y and 7Y
+    come from Treasury's daily curve (change vs. prior published day)."""
+    latest, prior, curve_date = fetch_treasury_curve()
     out = []
-    for ticker, label in TREASURY_TICKERS:
-        try:
-            last = getattr(yf.Ticker(ticker).fast_info, "last_price", None)
-            out.append({
-                "label": label, "ticker": ticker,
-                "yield_pct": round(float(last), 3) if last is not None else None,
-                "error": None,
-            })
-        except Exception as exc:
-            out.append({"label": label, "ticker": ticker, "yield_pct": None, "error": str(exc)})
+    for label, ticker, curve_key in YIELD_ROWS:
+        row = {"label": label, "ticker": ticker, "yield_pct": None, "change_bps": None,
+               "source": None, "as_of": None, "error": None}
+        if ticker:
+            try:
+                fast = yf.Ticker(ticker).fast_info
+                last = getattr(fast, "last_price", None)
+                prev_close = getattr(fast, "previous_close", None)
+                if last is not None:
+                    row["yield_pct"] = round(float(last), 3)
+                    row["source"] = "live"
+                    if prev_close:
+                        row["change_bps"] = round((float(last) - float(prev_close)) * 100, 1)
+            except Exception as exc:
+                row["error"] = str(exc)
+        if row["yield_pct"] is None:
+            val = _curve_val(latest, curve_key)
+            if val is not None:
+                row["yield_pct"] = round(val, 3)
+                row["source"] = "treasury"
+                row["as_of"] = curve_date
+                prev_val = _curve_val(prior, curve_key)
+                if prev_val is not None:
+                    row["change_bps"] = round((val - prev_val) * 100, 1)
+        out.append(row)
     return out
+
+
+def build_yield_spreads(yields):
+    """Curve spreads in bps. 2s10s is the classic growth/recession read;
+    3m10y is the version the NY Fed's recession model uses."""
+    by_label = {y["label"]: y for y in yields if y.get("yield_pct") is not None}
+
+    def spread(long_label, short_label, name, note):
+        a, b = by_label.get(long_label), by_label.get(short_label)
+        if not a or not b:
+            return None
+        bps = round((a["yield_pct"] - b["yield_pct"]) * 100, 1)
+        change = None
+        if a.get("change_bps") is not None and b.get("change_bps") is not None:
+            change = round(a["change_bps"] - b["change_bps"], 1)
+        return {"label": name, "bps": bps, "change_bps": change,
+                "inverted": bps < 0, "note": note}
+
+    out = [
+        spread("10-Year", "2-Year", "2s10s", "10-Year minus 2-Year. Negative (inverted) has preceded every modern recession; steepening off an inversion is the part that usually coincides with trouble."),
+        spread("10-Year", "3-Month", "3m10s", "10-Year minus 3-Month. The spread the NY Fed's own recession model runs on."),
+    ]
+    return [x for x in out if x]
+
+
+# ---------------------------------------------------------------------------
+# Fed policy rate - NY Fed reference rates API (free, keyless, no scraping).
+# EFFR is where fed funds actually trades; targetRateFrom/To is the FOMC's
+# current target range, straight from the same record.
+# ---------------------------------------------------------------------------
+
+def fetch_fed_rates(timeout=12):
+    url = "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/2.json"
+    try:
+        resp = _session.get(url, headers=YAHOO_HEADERS, timeout=timeout)
+        if resp.status_code != 200:
+            return {"error": f"NY Fed HTTP {resp.status_code}"}
+        rates = (resp.json() or {}).get("refRates") or []
+        if not rates:
+            return {"error": "no EFFR data"}
+        latest = rates[0]
+        prior = rates[1] if len(rates) > 1 else None
+        effr = latest.get("percentRate")
+        change = None
+        if prior and prior.get("percentRate") is not None and effr is not None:
+            change = round((float(effr) - float(prior["percentRate"])) * 100, 1)
+        return {
+            "effr": effr,
+            "change_bps": change,
+            "target_from": latest.get("targetRateFrom"),
+            "target_to": latest.get("targetRateTo"),
+            "as_of": latest.get("effectiveDate"),
+            "volume_bn": latest.get("volumeInBillions"),
+            "error": None,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Treasury auctions - TreasuryDirect's public API (free, keyless).
+# Upcoming = what's being sold and when; results = how the sale went.
+# Bid-to-cover (total bids / amount sold) and the indirect share (a proxy for
+# foreign/central-bank demand) are the two numbers that move yields when an
+# auction goes badly.
+# ---------------------------------------------------------------------------
+
+TD_BASE = "https://www.treasurydirect.gov/TA_WS/securities/"
+# Bills are mostly cash-management noise; notes/bonds/TIPS/FRNs are the auctions
+# that actually move the long end. Bills kept but flagged so the UI can dim them.
+COUPON_TYPES = {"Note", "Bond", "TIPS", "FRN"}
+
+
+def _td_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _td_row(item):
+    total = _td_float(item.get("totalAccepted"))
+    indirect = _td_float(item.get("indirectBidderAccepted"))
+    high = _td_float(item.get("highYield")) or _td_float(item.get("highDiscountRate"))
+    sec_type = item.get("securityType")
+    return {
+        "term": item.get("securityTerm"),
+        "type": sec_type,
+        "coupon_auction": sec_type in COUPON_TYPES,
+        "auction_date": (item.get("auctionDate") or "")[:10],
+        "issue_date": (item.get("issueDate") or "")[:10],
+        "offering_bn": round(_td_float(item.get("offeringAmount")) / 1e9, 1) if _td_float(item.get("offeringAmount")) else None,
+        "high_rate": round(high, 3) if high is not None else None,
+        "rate_kind": "yield" if _td_float(item.get("highYield")) is not None else "discount",
+        "bid_to_cover": round(_td_float(item.get("bidToCoverRatio")), 2) if _td_float(item.get("bidToCoverRatio")) else None,
+        "indirect_pct": round(indirect / total * 100, 1) if (indirect and total) else None,
+        "reopening": item.get("reopening") == "Yes",
+        "cusip": item.get("cusip"),
+    }
+
+
+def fetch_treasury_auctions(timeout=15, days_back=10):
+    upcoming, results, errors = [], [], []
+    try:
+        resp = _session.get(TD_BASE + "upcoming", params={"format": "json"},
+                            headers=YAHOO_HEADERS, timeout=timeout)
+        if resp.status_code == 200:
+            upcoming = [_td_row(x) for x in (resp.json() or [])]
+            upcoming.sort(key=lambda r: (r["auction_date"], not r["coupon_auction"]))
+        else:
+            errors.append(f"Auctions upcoming HTTP {resp.status_code}")
+    except Exception as exc:
+        errors.append(f"Auctions upcoming: {exc}")
+    try:
+        resp = _session.get(TD_BASE + "auctioned", params={"format": "json", "days": days_back},
+                            headers=YAHOO_HEADERS, timeout=timeout)
+        if resp.status_code == 200:
+            rows = [_td_row(x) for x in (resp.json() or [])]
+            seen = set()
+            for row in sorted(rows, key=lambda r: r["auction_date"], reverse=True):
+                key = (row["auction_date"], row["term"], row["type"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(row)
+        else:
+            errors.append(f"Auction results HTTP {resp.status_code}")
+    except Exception as exc:
+        errors.append(f"Auction results: {exc}")
+    return {"upcoming": upcoming[:12], "results": results[:12], "errors": errors}
 
 
 # ---------------------------------------------------------------------------

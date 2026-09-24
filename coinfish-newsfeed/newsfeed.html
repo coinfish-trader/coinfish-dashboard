@@ -235,6 +235,35 @@
   }
   .term-contango { color: var(--green); }
   .term-backwardation { color: var(--red); }
+  .macro-item .value-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .bps { font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+  .bps.up { color: var(--red); }      /* yields up = bonds sold off */
+  .bps.down { color: var(--green); }
+  .bps.flat { color: var(--muted); }
+  .macro-item .stamp { font-size: 0.6rem; color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .macro-item.spread .value { color: var(--teal-bright); }
+  .macro-item.spread.inverted .value { color: var(--red); }
+  .macro-item.fed .value { color: var(--gold-bright); }
+
+  /* Treasury auctions */
+  .auction-row {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 0.78rem;
+  }
+  .auction-row:last-child { border-bottom: none; }
+  .auction-row.bill { opacity: 0.62; }
+  .auction-row .a-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .auction-row .a-term { color: var(--white); font-weight: 600; }
+  .auction-row .a-term .tag {
+    font-size: 0.6rem; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.05em; margin-left: 6px; font-weight: 600;
+  }
+  .auction-row .a-sub { color: var(--muted); font-size: 0.7rem; }
+  .auction-row .a-right { text-align: right; white-space: nowrap; }
+  .auction-row .a-rate { color: var(--gold-bright); font-weight: 700; }
+  .auction-row .a-demand { color: var(--muted); font-size: 0.7rem; }
+  .auction-row .a-demand .strong { color: var(--green); }
+  .auction-row .a-demand .weak { color: var(--red); }
 
   .sector-bars-head {
     font-size: 0.66rem;
@@ -1366,6 +1395,20 @@
           <div id="ipoList"><div class="empty">Loading…</div></div>
         </div>
       </div>
+      <div class="sidebar-block" data-key="auctions">
+        <div class="sidebar-head">
+          <h3>Treasury Auctions</h3>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="sidebar-body">
+          <div class="filters" id="auctionTabs">
+            <button class="pill active" data-auction="upcoming">Upcoming</button>
+            <button class="pill" data-auction="results">Results</button>
+            <button class="pill" data-auction="coupons">Notes &amp; Bonds</button>
+          </div>
+          <div id="auctionList"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
       <button class="refresh-btn" onclick="loadAll()">Refresh now</button>
     </div>
 
@@ -1663,6 +1706,19 @@ function buildFgScaleSvg(score) {
     </svg>`;
 }
 
+function bpsChip(bps) {
+  if (bps === null || bps === undefined) return "";
+  const cls = bps > 0 ? "up" : (bps < 0 ? "down" : "flat");
+  const arrow = bps > 0 ? "▲" : (bps < 0 ? "▼" : "•");
+  return `<span class="bps ${cls}">${arrow} ${Math.abs(bps).toFixed(1)}bp</span>`;
+}
+
+function shortDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + (iso.length === 10 ? "T12:00:00" : ""));
+  return isNaN(d) ? iso : d.toLocaleDateString([], {month: "short", day: "numeric"});
+}
+
 async function loadMacro() {
   const j = await getJSON("/api/macro");
   const grid = document.getElementById("macroGrid");
@@ -1708,12 +1764,41 @@ async function loadMacro() {
   }
   (yields || []).forEach(y => {
     if (y.yield_pct === null || y.yield_pct === undefined) return;
+    const stamp = y.source === "treasury"
+      ? `Treasury close ${esc(shortDate(y.as_of))}`
+      : "live";
     statsHtml += `
       <div class="macro-item">
         <span class="label">${esc(y.label)} Yield</span>
-        <span class="value">${esc(y.yield_pct)}%</span>
+        <span class="value-row">
+          <span class="value">${esc(y.yield_pct.toFixed ? y.yield_pct.toFixed(2) : y.yield_pct)}%</span>
+          ${bpsChip(y.change_bps)}
+        </span>
+        <span class="stamp">${stamp}</span>
       </div>`;
   });
+  (j.yield_spreads || []).forEach(sp => {
+    statsHtml += `
+      <div class="macro-item spread${sp.inverted ? " inverted" : ""}" title="${esc(sp.note)}">
+        <span class="label">${esc(sp.label)}</span>
+        <span class="value-row">
+          <span class="value">${sp.bps > 0 ? "+" : ""}${esc(sp.bps)}bp</span>
+          ${bpsChip(sp.change_bps)}
+        </span>
+        <span class="stamp">${sp.inverted ? "inverted" : "steepness"}</span>
+      </div>`;
+  });
+  const fed = j.fed || {};
+  if (fed.target_from !== null && fed.target_from !== undefined) {
+    statsHtml += `
+      <div class="macro-item fed" title="The FOMC's current target range for fed funds, and EFFR: where fed funds actually traded overnight inside that range.">
+        <span class="label">Fed Funds Target</span>
+        <span class="value-row">
+          <span class="value">${esc(fed.target_from.toFixed(2))}–${esc(fed.target_to.toFixed(2))}%</span>
+        </span>
+        <span class="stamp">EFFR ${esc(fed.effr)}% · ${esc(shortDate(fed.as_of))}</span>
+      </div>`;
+  }
   if (fomc.days_until !== null && fomc.days_until !== undefined) {
     statsHtml += `
       <div class="macro-item">
@@ -2837,10 +2922,68 @@ async function checkForNewVersion() {
   } catch (e) { /* ignore */ }
 }
 
+let allAuctions = {upcoming: [], results: []};
+let auctionTab = "upcoming";
+
+function renderAuctions() {
+  const el = document.getElementById("auctionList");
+  let rows, showResults;
+  if (auctionTab === "results") { rows = allAuctions.results || []; showResults = true; }
+  else if (auctionTab === "coupons") { rows = (allAuctions.upcoming || []).filter(r => r.coupon_auction); showResults = false; }
+  else { rows = allAuctions.upcoming || []; showResults = false; }
+
+  if (!rows.length) { el.innerHTML = '<div class="empty">Nothing here right now.</div>'; return; }
+  el.innerHTML = rows.map(r => {
+    const size = r.offering_bn ? `$${r.offering_bn}B` : "size TBA";
+    const sub = showResults
+      ? `${esc(shortDate(r.auction_date))} · ${size}`
+      : `${esc(shortDate(r.auction_date))} · ${size}${r.reopening ? " · reopening" : ""}`;
+    let right = "";
+    if (showResults) {
+      // Bid-to-cover: total bids per dollar sold. Under ~2.2 on a coupon auction
+      // is soft demand, which usually shows up as higher yields right after.
+      const btc = r.bid_to_cover;
+      const btcCls = btc === null ? "" : (btc >= 2.4 ? "strong" : (btc < 2.1 ? "weak" : ""));
+      right = `
+        <div class="a-rate">${r.high_rate !== null ? esc(r.high_rate.toFixed(3)) + "%" : "&mdash;"}</div>
+        <div class="a-demand">
+          ${btc !== null ? `<span class="${btcCls}">${esc(btc.toFixed(2))}x</span> cover` : ""}
+          ${r.indirect_pct !== null ? ` · ${esc(r.indirect_pct)}% indirect` : ""}
+        </div>`;
+    }
+    return `
+      <div class="auction-row${r.coupon_auction ? "" : " bill"}">
+        <div class="a-left">
+          <div class="a-term">${esc(r.term)}<span class="tag">${esc(r.type)}</span></div>
+          <div class="a-sub">${sub}</div>
+        </div>
+        <div class="a-right">${right}</div>
+      </div>`;
+  }).join("");
+}
+
+async function loadAuctions() {
+  const j = await getJSON("/api/auctions");
+  allAuctions = {upcoming: j.upcoming || [], results: j.results || []};
+  renderAuctions();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const tabs = document.getElementById("auctionTabs");
+  if (!tabs) return;
+  tabs.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".pill");
+    if (!btn) return;
+    auctionTab = btn.dataset.auction;
+    tabs.querySelectorAll(".pill").forEach(b => b.classList.toggle("active", b === btn));
+    renderAuctions();
+  });
+});
+
 async function loadAll() {
   checkForNewVersion();
   try {
-    await Promise.all([loadTape(), loadNews(), loadMovers(), loadMarketCap(), loadHeatmap(), loadFilings(), loadCalendar(), loadMacro()]);
+    await Promise.all([loadTape(), loadNews(), loadMovers(), loadMarketCap(), loadHeatmap(), loadFilings(), loadCalendar(), loadMacro(), loadAuctions()]);
     setStatus(true);
   } catch (e) {
     console.error(e);

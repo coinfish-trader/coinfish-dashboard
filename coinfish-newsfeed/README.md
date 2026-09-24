@@ -63,3 +63,15 @@ Edit the `WATCHLIST` list at the top of `app.py`. It's a plain Python list, not 
 - **Full text only works with the login on.** With `NEWSFEED_PASSWORD` unset, `/api/article` refuses to serve article text, so other outlets' full articles are never shown on an open site.
 - Article text is extracted with `trafilatura` and cached in memory for 6 hours.
 - Added outlets: NYT (Business + Economy), Financial Times (Markets), Seeking Alpha (Market Currents), Investing.com (Stock Market + Economy), Nasdaq (Markets + Stocks), Zero Hedge, BBC Business, Business Insider, Axios. Business Insider and Axios only offer general feeds, so some non-market stories come through from those two.
+
+## Rates and auctions (added 2026-09-24)
+
+- **Yield curve in the Macro Snapshot:** 3-Month, 2-Year, 5-Year, 7-Year, 10-Year, 30-Year, each with the day's move in basis points. Red = yields up (bonds sold off), green = yields down.
+  - 3M / 5Y / 10Y / 30Y are live intraday via yfinance (`^IRX`, `^FVX`, `^TNX`, `^TYX`), change measured against the previous close.
+  - 2Y and 7Y have no reliable free intraday series (Yahoo's `2YY=F` futures quote disagrees with the cash curve by ~40bp), so they come from Treasury's official daily par yield curve XML and are labeled "Treasury close <date>". That file publishes around 3:30pm ET, so during the session those two show the prior day.
+- **Curve spreads:** 2s10s (10Y minus 2Y) and 3m10s (10Y minus 3M), with the day's change. Turns red when inverted.
+- **Fed funds:** current FOMC target range plus EFFR (where fed funds actually traded), from the NY Fed's reference-rates API (`markets.newyorkfed.org/api/rates/unsecured/effr/last/2.json`). `targetRateFrom`/`targetRateTo` on that record is the official target range, so no scraping of FOMC statements.
+- **Treasury Auctions panel** (right column, under the IPO calendar), from TreasuryDirect's public API:
+  - *Upcoming* — what is being auctioned, when, and size. *Notes & Bonds* filters out the bill noise.
+  - *Results* — high yield (or discount rate), bid-to-cover, and the indirect share (proxy for foreign/central-bank demand). Bid-to-cover under ~2.1 on a coupon auction is flagged red, 2.4+ green. Weak auctions push yields up, which is the part that matters for short-premium positions.
+  - Bill rows are dimmed; `/api/auctions` caches for 30 minutes since results publish once per security per day.
