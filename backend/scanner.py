@@ -305,7 +305,7 @@ def fetch_earnings_status(ticker):
     Returns (earnings_date_iso_or_None, status).
     status values:
       "clear"             -- earnings confirmed more than 21 days away (or > 7 days past)
-      "earn_risk"         -- earnings within the next 1-14 days
+      "earn_risk"         -- earnings within the next 1-24 days
       "vol_crushed"       -- earnings in the last 7 days (IV already collapsed)
       "earn_date_unknown" -- date not found or API error; treat as potentially risky
     """
@@ -351,7 +351,7 @@ def fetch_earnings_status(ticker):
             status = "clear"
         elif -7 <= delta <= 0:
             status = "vol_crushed"
-        elif 1 <= delta <= 14:   # 14d window — flag only near-term earnings risk
+        elif 1 <= delta <= 24:   # 24d window — flag earnings risk within typical DTE range
             status = "earn_risk"
         else:
             status = "clear"
