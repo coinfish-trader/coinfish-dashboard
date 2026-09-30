@@ -285,6 +285,11 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 .iv-low    { color: var(--green); }
 .iv-mid    { color: var(--yellow); }
 .iv-high   { color: var(--red); }
+.prem-strong { color: var(--green); font-weight: 600; }
+.prem-ok     { color: var(--yellow); font-weight: 600; }
+.prem-low    { color: var(--muted); }
+.vol-sub     { color: var(--muted); font-size: 11px; }
+.rank-build  { color: var(--muted); font-size: 11px; }
 .pc-val    { font-variant-numeric: tabular-nums; }
 .pc-bull   { color: var(--green); }
 .pc-bear   { color: var(--red); }
@@ -418,7 +423,7 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
       <div class="logo-icon">🐟</div>
       <div>
         <div class="logo-text">Coinfish Options Scanner</div>
-        <div class="logo-sub">48-stock watchlist · IV Rank · P/C Ratio · Earnings</div>
+        <div class="logo-sub">48-stock watchlist · IV/HV · IV Rank · P/C Ratio · Earnings</div>
       </div>
     </div>
     <div class="header-right">
@@ -442,7 +447,7 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
   <!-- ── Empty state ───────────────────────────────────────────── -->
   <div id="empty-state">
     <h2>Ready to scan</h2>
-    <p>Click <strong>Run Scan</strong> to fetch live IV rank, P/C ratios, and earnings data for all 56 watchlist tickers.</p>
+    <p>Click <strong>Run Scan</strong> to pull live implied volatility (CBOE IV30), IV/HV, P/C ratios and earnings dates for the 48-ticker watchlist.</p>
     <button class="btn btn-primary" onclick="startScan()">▶ Run Scan</button>
   </div>
 
@@ -459,7 +464,7 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
       <div class="metric-card yellow">
         <div class="metric-label">Earnings Risk</div>
         <div class="metric-value" id="m-earn">—</div>
-        <div class="metric-sub">Reports within 45 days</div>
+        <div class="metric-sub">Reports within 24 days</div>
       </div>
       <div class="metric-card red">
         <div class="metric-label">Vol Crushed</div>
@@ -505,9 +510,12 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
               <th onclick="sortBy('ticker')">Ticker <span class="sort-icon">⇅</span></th>
               <th onclick="sortBy('company')">Company <span class="sort-icon">⇅</span></th>
               <th onclick="sortBy('price')">Price <span class="sort-icon">⇅</span></th>
-              <th class="sorted" onclick="sortBy('iv_rank')">IV Rank <span class="sort-icon">↓</span></th>
+              <th onclick="sortBy('iv_hv')" title="Implied vol divided by realized vol. Above 1.0 = options priced for more movement than the stock is delivering.">IV/HV <span class="sort-icon">⇅</span></th>
+              <th onclick="sortBy('iv30')" title="CBOE 30-day implied volatility (same measure as IBKR Opt. Implied Volatility)">IV30 <span class="sort-icon">⇅</span></th>
+              <th onclick="sortBy('hv30')" title="30-session realized (historical) volatility">HV30 <span class="sort-icon">⇅</span></th>
+              <th onclick="sortBy('iv_rank')" title="Where today's IV30 sits in its own range. Builds from daily readings.">IV Rank <span class="sort-icon">⇅</span></th>
               <th onclick="sortBy('pc_ratio')">P/C OI Ratio <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('score')">Score <span class="sort-icon">⇅</span></th>
+              <th class="sorted" onclick="sortBy('score')">Score <span class="sort-icon">↓</span></th>
               <th>Setup</th>
               <th>Earnings</th>
             </tr>
@@ -520,13 +528,13 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 
     <!-- Sources footnote -->
     <div class="footer">
-      <strong>Data Sources:</strong> yfinance options chains (ATM IV via Black-Scholes, P/C OI ratio across 6 expirations) ·
-      yfinance calendar (earnings dates).
+      <strong>Data Sources:</strong> CBOE delayed quotes (IV30, 15-min delay) · yfinance price history (HV30) ·
+      yfinance options chains (P/C OI ratio across 6 expirations) · yfinance calendar (earnings dates).
       <br>
-      <em>IV rank compares today's ATM IV against the scanner's own IV history (IV vs. IV).
-      While history is building (&lt;10 readings), rank falls back to IV vs. realized HV and is labeled
-      <strong style="color:var(--yellow)">~N/10</strong> — these numbers are inflated by the vol risk premium.
-      Earnings flagged for 45 days forward; unknown dates shown as <strong style="color:var(--yellow)">? unknown</strong> and excluded from Top 3.
+      <em><strong>IV/HV</strong> = CBOE 30-day implied vol divided by 30-session realized vol.
+      <span class="prem-strong">1.25x+</span> earns full premium points, <span class="prem-ok">1.10x to 1.25x</span> earns half.
+      <strong>IV Rank</strong> builds from a daily IV30 reading saved after every close; it shows once 20 readings exist
+      and counts toward the score when it is higher than IV/HV. Earnings flagged 24 days forward; unknown dates are excluded from Top 3.
       Always verify in IBKR before trading.</em>
       <div class="source-list" id="source-list"></div>
     </div>
@@ -662,7 +670,7 @@ function startScan() {
       document.getElementById('prog-completed').textContent  = msg.completed;
       document.getElementById('prog-total').textContent      = msg.total;
       document.getElementById('prog-ticker-label').textContent =
-        `✓ ${msg.ticker} — ${msg.result.setup}${msg.result.iv_rank != null ? '  IV: ' + msg.result.iv_rank : ''}${msg.result.pc_ratio != null ? '  P/C: ' + msg.result.pc_ratio : ''}`;
+        `✓ ${msg.ticker} — ${msg.result.setup}${msg.result.iv_hv != null ? '  IV/HV: ' + msg.result.iv_hv.toFixed(2) : ''}${msg.result.pc_ratio != null ? '  P/C: ' + msg.result.pc_ratio : ''}`;
       return;
     }
 
@@ -761,12 +769,21 @@ function renderPicks(picks) {
 
       <div class="iv-bar-wrap">
         <div class="iv-bar-label">
-          <span>IV Rank</span>
-          <span class="${ivClass(p.iv_rank)}">${p.iv_rank != null ? p.iv_rank + '%' : 'N/A'}${p.iv_source && p.iv_source.startsWith('hv_proxy') ? `<small style="color:var(--yellow);margin-left:2px" title="${p.iv_source}">${_ivApproxLabel(p.iv_source)}</small>` : ''}</span>
+          <span>IV/HV</span>
+          <span class="${ivhvClass(p.iv_hv)}">${p.iv_hv != null ? p.iv_hv.toFixed(2) + 'x' : 'N/A'}</span>
         </div>
         <div class="iv-bar-track">
-          <div class="iv-bar-fill" style="width:${p.iv_rank != null ? p.iv_rank : 0}%"></div>
+          <div class="iv-bar-fill" style="width:${p.iv_hv != null ? Math.min(100, Math.max(0, (p.iv_hv - 0.8) / 1.0 * 100)) : 0}%"></div>
         </div>
+      </div>
+
+      <div class="pick-row">
+        <span class="pick-row-label">IV30 / HV30</span>
+        <span class="pick-row-value">${p.iv30 != null ? p.iv30.toFixed(1) + '%' : '—'} / ${p.hv30 != null ? p.hv30.toFixed(1) + '%' : '—'}</span>
+      </div>
+      <div class="pick-row">
+        <span class="pick-row-label">IV Rank</span>
+        <span class="pick-row-value">${rankCell(p)}</span>
       </div>
 
       <div class="pick-row">
@@ -819,7 +836,7 @@ function sortBy(key) {
     if (icon) icon.textContent = '⇅';
   });
   const ths = document.querySelectorAll('thead th');
-  const keyMap = ['ticker','company','price','iv_rank','pc_ratio','score'];
+  const keyMap = ['ticker','company','price','iv_hv','iv30','hv30','iv_rank','pc_ratio','score'];
   const idx = keyMap.indexOf(key);
   if (idx >= 0) {
     ths[idx].classList.add('sorted');
@@ -849,10 +866,10 @@ function renderTable(rows) {
       <td class="td-ticker">${r.ticker}</td>
       <td><span class="td-company">${r.company}</span></td>
       <td class="td-price">${r.price ? '$' + r.price.toLocaleString('en-US',{minimumFractionDigits:2}) : '<span class="na-val">—</span>'}</td>
-      <td class="td-iv">
-        <span class="iv-val ${ivClass(r.iv_rank)}">${r.iv_rank != null ? r.iv_rank + '%' + (r.iv_source && r.iv_source.startsWith('hv_proxy') ? `<small style="color:var(--yellow)"> ${_ivApproxLabel(r.iv_source)}</small>` : '') : '<span class="na-val">—</span>'}</span>
-        <div class="iv-mini-track"><div class="iv-mini-fill" style="width:${r.iv_rank||0}%"></div></div>
-      </td>
+      <td class="td-iv"><span class="${ivhvClass(r.iv_hv)}">${r.iv_hv != null ? r.iv_hv.toFixed(2) + 'x' : '<span class="na-val">—</span>'}</span></td>
+      <td>${r.iv30 != null ? r.iv30.toFixed(1) + '%' : '<span class="na-val">—</span>'}</td>
+      <td class="vol-sub">${r.hv30 != null ? r.hv30.toFixed(1) + '%' : '—'}</td>
+      <td>${rankCell(r)}</td>
       <td><span class="pc-val ${pcClass(r.pc_ratio)}">${r.pc_ratio != null ? r.pc_ratio : '<span class="na-val">—</span>'}</span></td>
       <td>${scoreDots(r.score)}</td>
       <td>${setupBadge(r.setup)}</td>
@@ -928,9 +945,19 @@ function earnBadge(status, earnDate) {
   return `<span style="color:var(--muted);font-size:11px">—</span>`;
 }
 
-function _ivApproxLabel(source) {
-  const m = source ? source.match(/(\d+)\/10/) : null;
-  return m ? m[1] + '/10' : '~';
+function ivhvClass(v) {
+  if (v == null) return '';
+  if (v >= 1.25) return 'prem-strong';
+  if (v >= 1.10) return 'prem-ok';
+  return 'prem-low';
+}
+
+const IV_RANK_MIN_DAYS = 20;
+function rankCell(r) {
+  if (r.iv_rank != null)
+    return `<span class="${ivClass(r.iv_rank)}">${r.iv_rank}%</span> <span class="rank-build">(${r.iv_rank_days}d)</span>`;
+  if (r.iv30 == null) return '<span class="na-val">—</span>';
+  return `<span class="rank-build" title="IV rank shows once ${IV_RANK_MIN_DAYS} daily IV30 readings are stored">building ${r.iv_rank_days || 0}/${IV_RANK_MIN_DAYS}</span>`;
 }
 
 /* ─── Check for cached data on page load ─────────────────────────── */
