@@ -1,7 +1,9 @@
+import os
 import time
 import json
 import math
 import threading
+import urllib.request
 import numpy as np
 from pathlib import Path
 from datetime import datetime, date, timedelta
@@ -9,38 +11,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yfinance as yf
 
-
-# ---------------------------------------------------------------------------
-# Black-Scholes IV solver (avoids relying on yfinance impliedVolatility field,
-# which returns near-zero garbage when bid/ask quotes are unavailable)
-# ---------------------------------------------------------------------------
-def _bs_call(S, K, T, r, sigma):
-    """Black-Scholes call price."""
-    if T <= 0 or sigma <= 0:
-        return max(S - K * math.exp(-r * T), 0.0)
-    sqrtT = math.sqrt(T)
-    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT)
-    d2 = d1 - sigma * sqrtT
-    N = lambda x: 0.5 * (1.0 + math.erf(x / math.sqrt(2)))
-    return S * N(d1) - K * math.exp(-r * T) * N(d2)
-
-
-def _solve_iv(S, K, T, r, market_price, tol=1e-4, max_iter=80):
-    """Return annualized IV (decimal) or None if unsolvable."""
-    intrinsic = max(S - K * math.exp(-r * T), 0.0)
-    if market_price <= intrinsic + 1e-6:
-        return None
-    lo, hi = 0.005, 5.0
-    for _ in range(max_iter):
-        mid = (lo + hi) / 2.0
-        val = _bs_call(S, K, T, r, mid)
-        if abs(val - market_price) < tol:
-            return mid
-        if val < market_price:
-            lo = mid
-        else:
-            hi = mid
-    return (lo + hi) / 2.0
 
 WATCHLIST = [
     # Technology (13)
@@ -90,61 +60,91 @@ SECTORS = {
 
 
 # ---------------------------------------------------------------------------
-# IV history store
+# Implied volatility source: CBOE delayed quotes (free, no login)
 #
-# Each full scan records the calculated ATM IV for every ticker into a JSON
-# file (iv_history.json, same directory as this file). IV rank is then
-# computed as where today's IV sits within the range of past readings --
-# IV vs. IV, the correct comparison.
+# CBOE publishes a 30-day implied volatility (IV30) for every optionable
+# stock. Same measure as IBKR's "Opt. Implied Volatility". 15-min delayed.
 #
-# The file persists across requests within a deploy but resets on redeploy.
-# 10+ readings are required before IV rank is shown; the scanner falls back
-# to an HV-based proxy (labeled "hv_proxy") while history is building.
-# One reading per ticker per calendar day; last 365 days retained.
+# Premium richness is scored two ways:
+#   IV/HV   -- IV30 vs. 30-day realized (historical) volatility. Works from
+#              the first scan. > 1.0 means options are priced for more
+#              movement than the stock is actually delivering.
+#   IV rank -- where today's IV30 sits in its own 52-week range. Built from
+#              daily IV30 readings stored on disk. Shown once there are
+#              IV_RANK_MIN_DAYS readings.
 # ---------------------------------------------------------------------------
-_IV_HISTORY_PATH = Path(__file__).parent / "iv_history.json"
-_iv_history = {}  # {ticker: [[date_str, iv_float], ...]}
+CBOE_QUOTE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/quotes/{sym}.json"
+IV_RANK_MIN_DAYS = 20
+
+# IV/HV thresholds (premium points)
+IVHV_STRONG = 1.25   # +2
+IVHV_OK     = 1.10   # +1
+
+
+def _history_dir():
+    """Persistent storage: Railway volume if attached, else this folder."""
+    d = (os.environ.get("IV_HISTORY_DIR")
+         or os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+         or str(Path(__file__).parent))
+    Path(d).mkdir(parents=True, exist_ok=True)
+    return Path(d)
+
+
+_IV_HISTORY_PATH = _history_dir() / "iv_history.json"
+_history_lock = threading.Lock()
 
 
 def _load_iv_history():
-    global _iv_history
     try:
         if _IV_HISTORY_PATH.exists():
             with open(_IV_HISTORY_PATH) as f:
-                _iv_history = json.load(f)
-    except Exception:
-        _iv_history = {}
-
-
-def _save_iv_history():
-    try:
-        with open(_IV_HISTORY_PATH, "w") as f:
-            json.dump(_iv_history, f)
+                data = json.load(f)
+                if isinstance(data, dict) and data.get("_source") == "cboe_iv30":
+                    return data
     except Exception:
         pass
+    # Old Black-Scholes readings are not comparable to CBOE IV30; start clean.
+    return {"_source": "cboe_iv30"}
 
 
-def _record_iv(ticker, iv_value):
-    today = date.today().isoformat()
-    if ticker not in _iv_history:
-        _iv_history[ticker] = []
-    entries = _iv_history[ticker]
-    # One entry per day -- replace if already recorded today
-    entries = [[d, v] for d, v in entries if d != today]
-    entries.append([today, round(iv_value, 4)])
-    # Trim to last 365 calendar days
-    cutoff = (date.today() - timedelta(days=365)).isoformat()
-    _iv_history[ticker] = [[d, v] for d, v in entries if d >= cutoff]
+def _save_iv_history(hist):
+    tmp = _IV_HISTORY_PATH.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        json.dump(hist, f)
+    os.replace(tmp, _IV_HISTORY_PATH)
 
 
-def _iv_rank_from_history(ticker, current_iv):
-    """
-    IV Rank: position of current IV within the 52-week range of stored IV readings.
-    Returns (rank_pct, n_readings). rank_pct is None when n_readings < 10.
-    """
-    entries = _iv_history.get(ticker, [])
+def record_iv_readings(readings):
+    """readings: {ticker: (session_date_iso, iv30_pct)}. One value per ticker per session."""
+    if not readings:
+        return
+    cutoff = (date.today() - timedelta(days=366)).isoformat()
+    with _history_lock:
+        lockf = open(_IV_HISTORY_PATH.with_suffix(".lock"), "w")
+        try:
+            try:
+                import fcntl  # cross-process lock (gunicorn runs 2 workers)
+                fcntl.flock(lockf, fcntl.LOCK_EX)
+            except ImportError:
+                pass
+            hist = _load_iv_history()
+            for tk, (d, iv) in readings.items():
+                entries = [e for e in hist.get(tk, []) if e[0] != d and e[0] >= cutoff]
+                entries.append([d, round(float(iv), 3)])
+                entries.sort(key=lambda e: e[0])
+                hist[tk] = entries
+            _save_iv_history(hist)
+        finally:
+            lockf.close()
+
+
+def iv_rank_from_history(ticker, current_iv, hist=None):
+    """Returns (rank_pct or None, n_days)."""
+    if hist is None:
+        hist = _load_iv_history()
+    entries = hist.get(ticker, [])
     n = len(entries)
-    if n < 10:
+    if n < IV_RANK_MIN_DAYS:
         return None, n
     ivs = [v for _, v in entries]
     lo, hi = min(ivs), max(ivs)
@@ -154,7 +154,60 @@ def _iv_rank_from_history(ticker, current_iv):
     return round(min(max(rank, 0.0), 100.0), 1), n
 
 
-_load_iv_history()
+def fetch_cboe_quote(ticker, timeout=10):
+    """Returns dict(price, iv30, session_date) or raises."""
+    req = urllib.request.Request(
+        CBOE_QUOTE_URL.format(sym=ticker.replace("-", ".")),
+        headers={"User-Agent": "Mozilla/5.0 (coinfish-scanner)"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        d = json.load(r)["data"]
+    iv30 = d.get("iv30")
+    if iv30 is None or float(iv30) <= 0:
+        raise ValueError("CBOE: no IV30")
+    ltt = d.get("last_trade_time") or ""
+    session = ltt[:10] if len(ltt) >= 10 else date.today().isoformat()
+    return {
+        "price":        float(d.get("current_price") or 0) or None,
+        "iv30":         float(iv30),
+        "session_date": session,
+    }
+
+
+def record_all_iv30():
+    """Pull IV30 for the whole watchlist and store it. Used by the daily recorder."""
+    readings = {}
+    def _one(tk):
+        try:
+            q = fetch_cboe_quote(tk)
+            return tk, (q["session_date"], q["iv30"])
+        except Exception:
+            return tk, None
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for tk, val in ex.map(_one, WATCHLIST):
+            if val:
+                readings[tk] = val
+    record_iv_readings(readings)
+    return len(readings)
+
+
+def fetch_hv30(t):
+    """30-session realized vol, annualized, in percent (matches IBKR HV window). Completed sessions only."""
+    hist = t.history(period="3mo", auto_adjust=True)
+    if hist is None or len(hist) < 32:
+        return None
+    closes = hist["Close"]
+    try:
+        last_idx = closes.index[-1]
+        now_mkt = datetime.now(last_idx.tz)
+        if last_idx.date() == now_mkt.date() and now_mkt.hour < 16:
+            closes = closes.iloc[:-1]   # drop today's partial bar during market hours
+    except Exception:
+        pass
+    log_ret = np.log(closes / closes.shift(1)).dropna().iloc[-30:]
+    if len(log_ret) < 20:
+        return None
+    return float(log_ret.std() * math.sqrt(252) * 100.0)
 
 
 def _sector(ticker):
@@ -208,96 +261,6 @@ def fetch_pc_ratio_yfinance(ticker):
         return round(total_put_oi / total_call_oi, 3), None
     except Exception as exc:
         return None, f"yfinance P/C: {exc}"
-
-
-def fetch_iv_rank_approx(ticker):
-    """
-    Calculates ATM implied vol via Black-Scholes, records it in IV history,
-    and ranks it against that history (IV vs. IV -- correct comparison).
-
-    Returns (rank_pct, source_label) on success, (None, error_msg) on failure.
-    source_label values:
-      "iv_history"       -- ranked against own IV history (correct)
-      "hv_proxy (N/10)"  -- fallback while history builds; IV vs. realized HV,
-                            inflated by vol risk premium, treat as approximate
-    """
-    try:
-        t = yf.Ticker(ticker)
-
-        price = _get_price(t)
-        if not price:
-            return None, "yfinance: no price"
-
-        exps = t.options
-        if not exps:
-            return None, "yfinance: no expirations"
-
-        # Sample ATM IV from the first 3 expirations with >= 7 DTE
-        iv_samples = []
-        today = date.today()
-        r = 0.045  # risk-free rate estimate
-        sampled = 0
-        for exp in exps:
-            if sampled >= 3:
-                break
-            dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
-            if dte < 7:
-                continue  # skip ultra-short-dated; IV unreliable
-            T = dte / 365.0  # calendar days -- NOT 252 trading days
-            try:
-                chain = t.option_chain(exp)
-                for leg in (chain.calls, chain.puts):
-                    if leg.empty:
-                        continue
-                    leg = leg.copy()
-                    leg["dist"] = abs(leg["strike"] - price)
-                    atm_row = leg.nsmallest(1, "dist").iloc[0]
-                    K = float(atm_row["strike"])
-                    # prefer mid-price; fall back to lastPrice
-                    bid = float(atm_row.get("bid", 0) or 0)
-                    ask = float(atm_row.get("ask", 0) or 0)
-                    opt_price = (bid + ask) / 2.0 if bid > 0 and ask > 0 else float(atm_row.get("lastPrice", 0) or 0)
-                    if opt_price <= 0:
-                        continue
-                    iv = _solve_iv(price, K, T, r, opt_price)
-                    if iv and 0.01 <= iv <= 3.0:
-                        iv_samples.append(iv)
-            except Exception:
-                continue
-            sampled += 1
-
-        if not iv_samples:
-            return None, "yfinance: could not sample ATM IV"
-
-        current_iv = float(np.mean(iv_samples))
-
-        # Record today's reading into IV history
-        _record_iv(ticker, current_iv)
-
-        # Primary: rank against own IV history (IV vs. IV)
-        iv_rank, n_readings = _iv_rank_from_history(ticker, current_iv)
-        if iv_rank is not None:
-            return iv_rank, "iv_history"
-
-        # Fallback: rank against realized HV while history is building.
-        # This overstates IV rank because IV carries a vol risk premium above HV.
-        # The label makes the approximation visible in the output.
-        hist = t.history(period="1y")
-        if len(hist) < 60:
-            return None, f"yfinance: insufficient price history ({n_readings}/10 IV readings)"
-
-        log_ret = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
-        hv_series = log_ret.rolling(21).std() * np.sqrt(252)
-        hv_vals = hv_series.dropna().values
-
-        if len(hv_vals) == 0:
-            return None, "yfinance: could not compute HV"
-
-        pct_rank = float(np.mean(hv_vals < current_iv)) * 100
-        return round(pct_rank, 1), f"hv_proxy ({n_readings}/10 IV readings)"
-
-    except Exception as exc:
-        return None, f"yfinance IV approx: {exc}"
 
 
 def fetch_earnings_status(ticker):
@@ -362,13 +325,25 @@ def fetch_earnings_status(ticker):
         return None, "earn_date_unknown"
 
 
-def compute_score(iv_rank, pc_ratio):
-    score = 0
+
+def premium_points(iv_hv, iv_rank):
+    """Premium richness: best of IV/HV and IV rank (when available). 0-2."""
+    pts = 0
+    if iv_hv is not None:
+        if iv_hv >= IVHV_STRONG:
+            pts = 2
+        elif iv_hv >= IVHV_OK:
+            pts = 1
     if iv_rank is not None:
         if iv_rank > 50:
-            score += 2
+            pts = max(pts, 2)
         elif iv_rank >= 35:
-            score += 1
+            pts = max(pts, 1)
+    return pts
+
+
+def compute_score(prem_pts, pc_ratio):
+    score = prem_pts
     if pc_ratio is not None:
         if pc_ratio < 0.70:
             score += 2
@@ -377,10 +352,10 @@ def compute_score(iv_rank, pc_ratio):
     return score
 
 
-def compute_setup(iv_rank, pc_ratio):
-    if iv_rank is None:
+def compute_setup(iv30, prem_pts, pc_ratio):
+    if iv30 is None:
         return "No Data"
-    if iv_rank > 50:
+    if prem_pts >= 2:
         if pc_ratio is not None and pc_ratio < 0.70:
             return "Bull put spread"
         if pc_ratio is not None and pc_ratio > 1.0:
@@ -395,8 +370,13 @@ def scan_ticker(ticker):
         "company":         COMPANY_NAMES.get(ticker, ticker),
         "sector":          _sector(ticker),
         "price":           None,
+        "iv30":            None,
+        "hv30":            None,
+        "iv_hv":           None,
         "iv_rank":         None,
+        "iv_rank_days":    0,
         "iv_source":       None,
+        "premium_pts":     0,
         "pc_ratio":        None,
         "pc_source":       None,
         "earnings_date":   None,
@@ -407,24 +387,42 @@ def scan_ticker(ticker):
         "errors":          [],
     }
 
-    try:
-        t = yf.Ticker(ticker)
-        p = _get_price(t)
-        if p:
-            result["price"] = round(p, 2)
-    except Exception:
-        pass
+    t = yf.Ticker(ticker)
 
-    # IV rank
-    yf_iv, yf_iv_info = fetch_iv_rank_approx(ticker)
-    if yf_iv is not None:
-        result["iv_rank"]   = round(yf_iv, 1)
-        result["iv_source"] = yf_iv_info
-        result["sources"].append(f"IV rank ({yf_iv_info}) for {ticker}")
-        if "hv_proxy" in yf_iv_info:
-            result["errors"].append(f"IV rank approximate (HV proxy, inflated by VRP): {yf_iv_info}")
-    else:
-        result["errors"].append(yf_iv_info or "IV rank unavailable")
+    # IV30 + price from CBOE
+    try:
+        q = fetch_cboe_quote(ticker)
+        result["iv30"]      = round(q["iv30"], 1)
+        result["iv_source"] = "cboe_iv30"
+        result["price"]     = round(q["price"], 2) if q["price"] else None
+        result["sources"].append(f"CBOE IV30 ({q['session_date']})")
+        record_iv_readings({ticker: (q["session_date"], q["iv30"])})
+    except Exception as exc:
+        result["errors"].append(f"CBOE IV30 unavailable: {exc}")
+
+    if result["price"] is None:
+        try:
+            p = _get_price(t)
+            if p:
+                result["price"] = round(p, 2)
+        except Exception:
+            pass
+
+    # 30-day realized vol and IV/HV
+    try:
+        hv = fetch_hv30(t)
+        if hv:
+            result["hv30"] = round(hv, 1)
+            if result["iv30"]:
+                result["iv_hv"] = round(result["iv30"] / hv, 2)
+    except Exception as exc:
+        result["errors"].append(f"HV30 unavailable: {exc}")
+
+    # IV rank from stored IV30 history
+    if result["iv30"] is not None:
+        rank, n = iv_rank_from_history(ticker, result["iv30"])
+        result["iv_rank"]      = rank
+        result["iv_rank_days"] = n
 
     # P/C ratio via yfinance options chain
     yf_pc, yf_pc_err = fetch_pc_ratio_yfinance(ticker)
@@ -439,8 +437,9 @@ def scan_ticker(ticker):
     result["earnings_date"]   = earn_date
     result["earnings_status"] = earn_status
 
-    result["score"] = compute_score(result["iv_rank"], result["pc_ratio"])
-    result["setup"] = compute_setup(result["iv_rank"], result["pc_ratio"])
+    result["premium_pts"] = premium_points(result["iv_hv"], result["iv_rank"])
+    result["score"] = compute_score(result["premium_pts"], result["pc_ratio"])
+    result["setup"] = compute_setup(result["iv30"], result["premium_pts"], result["pc_ratio"])
 
     return result
 
@@ -469,19 +468,18 @@ def run_full_scan(progress_cb=None):
                 results.append({
                     "ticker": t, "company": COMPANY_NAMES.get(t, t),
                     "sector": _sector(t), "price": None,
-                    "iv_rank": None, "iv_source": None,
+                    "iv30": None, "hv30": None, "iv_hv": None,
+                    "iv_rank": None, "iv_rank_days": 0, "iv_source": None,
+                    "premium_pts": 0,
                     "pc_ratio": None, "pc_source": None,
                     "earnings_date": None, "earnings_status": "earn_date_unknown",
                     "score": 0, "setup": "Error",
                     "sources": [], "errors": [str(exc)],
                 })
 
-    # Persist IV history after every full scan
-    _save_iv_history()
+    results.sort(key=lambda x: (x["score"], x["iv_hv"] or 0), reverse=True)
 
-    results.sort(key=lambda x: (x["score"], x["iv_rank"] or 0), reverse=True)
-
-    # top_3: exclude earn_date_unknown -- unknown date is not a clean setup
+    # top_3: clean bull put setups, no earnings exposure
     top_3 = [
         r for r in results
         if r["setup"] == "Bull put spread"
@@ -493,6 +491,7 @@ def run_full_scan(progress_cb=None):
     vol_crushed       = sum(1 for r in results if r["earnings_status"] == "vol_crushed")
     earn_date_unknown = sum(1 for r in results if r["earnings_status"] == "earn_date_unknown")
     eligible          = sum(1 for r in results if r["earnings_status"] not in ("earn_risk", "vol_crushed", "earn_date_unknown"))
+    rank_days         = max([r.get("iv_rank_days") or 0 for r in results] + [0])
 
     return {
         "scan_time":               datetime.now().isoformat(),
@@ -501,6 +500,10 @@ def run_full_scan(progress_cb=None):
         "vol_crushed_count":       vol_crushed,
         "earn_date_unknown_count": earn_date_unknown,
         "eligible_count":          eligible,
+        "iv_rank_days":            rank_days,
+        "iv_rank_min_days":        IV_RANK_MIN_DAYS,
+        "ivhv_strong":             IVHV_STRONG,
+        "ivhv_ok":                 IVHV_OK,
         "top_3":                   top_3,
         "results":                 results,
     }

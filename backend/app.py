@@ -19,7 +19,7 @@ import os
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
-from scanner import run_full_scan, scan_ticker, WATCHLIST
+from scanner import run_full_scan, scan_ticker, WATCHLIST, record_all_iv30
 from squeeze import run_squeeze_scan
 from trend import run_trend_scan
 
@@ -49,6 +49,37 @@ _trend_cache = {
     "is_scanning": False,
 }
 _trend_cache_lock = threading.Lock()
+
+# ── Daily IV30 recorder ───────────────────────────────────────────────────────
+# Records CBOE IV30 for the whole watchlist after every close (4:20pm ET,
+# weekdays) so IV rank history builds even when nobody opens the dashboard.
+# Also records once at startup to catch the latest session after a redeploy.
+def _iv_recorder_loop():
+    from datetime import datetime, timedelta
+    try:
+        from zoneinfo import ZoneInfo
+        et = ZoneInfo("America/New_York")
+    except Exception:
+        et = None
+    try:
+        record_all_iv30()
+    except Exception as exc:
+        print(f"[iv-recorder] startup record failed: {exc}", flush=True)
+    while True:
+        now = datetime.now(et) if et else datetime.utcnow() - timedelta(hours=4)
+        nxt = now.replace(hour=16, minute=20, second=0, microsecond=0)
+        if nxt <= now:
+            nxt += timedelta(days=1)
+        while nxt.weekday() >= 5:
+            nxt += timedelta(days=1)
+        time.sleep(max(60, (nxt - now).total_seconds()))
+        try:
+            n = record_all_iv30()
+            print(f"[iv-recorder] recorded IV30 for {n} tickers", flush=True)
+        except Exception as exc:
+            print(f"[iv-recorder] failed: {exc}", flush=True)
+
+threading.Thread(target=_iv_recorder_loop, daemon=True).start()
 
 @app.route("/api/health")
 def health():
