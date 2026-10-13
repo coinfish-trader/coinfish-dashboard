@@ -421,6 +421,7 @@ def macro():
             "yields": yields,
             "yield_spreads": ns.build_yield_spreads(yields),
             "fed": ns.fetch_fed_rates(),
+            "credit": ns.fetch_credit_spreads(),
             "fomc": ns.get_fomc_status(),
             "sectors": ns.fetch_sector_heatmap(),
             "fear_greed": ns.fetch_fear_greed(),

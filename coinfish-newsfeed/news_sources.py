@@ -1683,6 +1683,94 @@ def build_yield_spreads(yields):
 
 
 # ---------------------------------------------------------------------------
+# Credit spreads - ICE BofA option-adjusted spreads via FRED's public CSV
+# endpoint (no API key needed). The high-yield OAS is the premium junk
+# issuers pay over Treasuries: the cleanest single read on whether credit
+# markets are relaxed or scared, and it usually moves before equities do.
+#
+# Caveat baked into the UI: ICE BofA data lands on FRED with a 1-3 business
+# day lag, so this is a trend gauge, not a live tick. HYG (the big junk-bond
+# ETF) is fetched alongside it as a same-day cross-check.
+# ---------------------------------------------------------------------------
+
+FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
+HY_OAS_SERIES = "BAMLH0A0HYM2"   # ICE BofA US High Yield Index OAS, in percent
+IG_OAS_SERIES = "BAMLC0A0CM"     # ICE BofA US Corporate (investment grade) OAS
+
+
+def _parse_fred_csv(text):
+    """FRED CSV -> [(date, value)] in file order. FRED writes '.' for
+    holidays/missing days; those rows are skipped."""
+    rows = []
+    for line in text.strip().splitlines()[1:]:
+        parts = line.split(",")
+        if len(parts) < 2:
+            continue
+        date, raw = parts[0].strip(), parts[1].strip()
+        if not raw or raw == ".":
+            continue
+        try:
+            rows.append((date, float(raw)))
+        except ValueError:
+            continue
+    return rows
+
+
+def _fred_last_two(series, timeout=20):
+    """(latest_value, latest_date, prior_value, error) from a FRED CSV series, in percent."""
+    try:
+        resp = _session.get(FRED_CSV.format(series=series), headers=YAHOO_HEADERS, timeout=timeout)
+        if resp.status_code != 200:
+            return None, None, None, f"FRED {series} HTTP {resp.status_code}"
+        rows = _parse_fred_csv(resp.text)
+        if not rows:
+            return None, None, None, f"FRED {series}: no usable rows"
+        latest_date, latest = rows[-1]
+        prior = rows[-2][1] if len(rows) > 1 else None
+        return latest, latest_date, prior, None
+    except Exception as exc:
+        return None, None, None, f"FRED {series}: {exc}"
+
+
+def fetch_credit_spreads():
+    """High-yield (and investment-grade) OAS in bps, plus HYG as a live proxy."""
+    out = {"hy_bps": None, "hy_change_bps": None, "as_of": None,
+           "ig_bps": None, "hy_ig_ratio": None,
+           "hyg_pct": None, "hyg_price": None, "error": None}
+
+    hy, hy_date, hy_prior, hy_err = _fred_last_two(HY_OAS_SERIES)
+    if hy is not None:
+        out["hy_bps"] = round(hy * 100, 1)          # FRED publishes percent, show bps
+        out["as_of"] = hy_date
+        if hy_prior is not None:
+            out["hy_change_bps"] = round((hy - hy_prior) * 100, 1)
+    else:
+        out["error"] = hy_err
+
+    ig, _ig_date, _ig_prior, _ig_err = _fred_last_two(IG_OAS_SERIES)
+    if ig is not None:
+        out["ig_bps"] = round(ig * 100, 1)
+        if hy is not None and ig:
+            # How many times more compensation junk demands vs investment grade.
+            out["hy_ig_ratio"] = round(hy / ig, 2)
+
+    # Same-day sanity check: HYG trades live, the OAS series does not.
+    try:
+        price, session_state, _perr = _yf_prepost_price_retry("HYG")
+        if session_state == "closed":
+            price, prev, _cerr = _yf_daily_close_pair_retry("HYG")
+        else:
+            prev, _cerr = _yf_prev_close_retry("HYG") if price is not None else (None, None)
+        if price is not None and prev:
+            out["hyg_price"] = round(float(price), 2)
+            out["hyg_pct"] = round((float(price) - float(prev)) / float(prev) * 100, 2) + 0.0  # avoid "-0"
+    except Exception:
+        pass
+
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Fed policy rate - NY Fed reference rates API (free, keyless, no scraping).
 # EFFR is where fed funds actually trades; targetRateFrom/To is the FOMC's
 # current target range, straight from the same record.

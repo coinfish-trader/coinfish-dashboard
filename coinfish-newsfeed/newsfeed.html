@@ -1751,6 +1751,7 @@ const RATE_WHAT = {
   "2s10s": "The 10-year minus the 2-year. The slope between what the Fed is expected to do and what the market thinks growth and inflation look like long term.",
   "3m10s": "The 10-year minus the 3-month. The same slope idea measured against cash, and the version the New York Fed's own recession model runs on.",
   "Fed Funds Target": "The range the FOMC tells banks to lend overnight within, plus EFFR: the rate fed funds actually traded at last night inside that range.",
+  "HY Spread": "The extra yield junk-rated companies must pay over Treasuries to borrow, in basis points. It is the price of credit risk, and the cleanest single read on whether lenders are relaxed or scared.",
 };
 
 function yieldRead(y) {
@@ -1805,6 +1806,34 @@ const SPREAD_TRADE = {
   "3m10s": "This is the more reliable recession signal of the two, which makes it a position-size input rather than an entry signal. A deepening inversion here alongside a rising VIX argues for smaller size and wider spreads on your bull puts, because the tail you are short gets fatter in exactly that environment.",
 };
 
+function creditRead(c) {
+  if (!c || c.hy_bps === null || c.hy_bps === undefined) return "No credit spread data right now.";
+  const bps = c.hy_bps;
+  let state;
+  if (bps < 300) state = `At ${bps}bp the spread is tight by historical standards. Lenders are comfortable, default fears are low, and risk appetite is healthy. Tight spreads are not a sell signal on their own, but they leave little cushion: there is more room to widen than to compress.`;
+  else if (bps < 400) state = `At ${bps}bp the spread sits in its normal range. Credit markets are calm and are not flagging trouble.`;
+  else if (bps < 600) state = `At ${bps}bp the spread is elevated. Lenders are demanding real compensation for risk, which usually shows up in equities as choppier tape and bigger down days.`;
+  else state = `At ${bps}bp the spread is in genuine stress territory. Levels like this have come with recessions and severe equity drawdowns.`;
+  let move = "";
+  const chg = c.hy_change_bps;
+  if (chg !== null && chg !== undefined && Math.abs(chg) >= 3) {
+    move = chg > 0
+      ? ` It widened ${Math.abs(chg).toFixed(1)}bp in the latest session. Widening is the direction that matters: credit usually starts cracking before equities do.`
+      : ` It narrowed ${Math.abs(chg).toFixed(1)}bp in the latest session, which is risk appetite improving.`;
+  }
+  let ig = "";
+  if (c.ig_bps !== null && c.ig_bps !== undefined) {
+    ig = ` Investment grade sits at ${c.ig_bps}bp, so junk is demanding about ${c.hy_ig_ratio}x what the safest corporate borrowers pay.`;
+  }
+  let live = "";
+  if (c.hyg_pct !== null && c.hyg_pct !== undefined) {
+    live = ` Today's live cross-check: HYG, the big junk-bond ETF, is ${c.hyg_pct >= 0 ? "up" : "down"} ${Math.abs(c.hyg_pct).toFixed(2)}%${c.hyg_pct <= -0.5 ? ", which is a meaningful down day for credit" : ""}.`;
+  }
+  return state + move + ig + live;
+}
+
+const CREDIT_TRADE = "Credit is the early warning system for the trades you run. Short put spreads on the indexes are effectively a bet that nothing breaks, and credit tends to break first: spreads widen while the index is still near highs, then equities catch down. The level matters less than the direction and the speed. A quiet drift of a few basis points is noise. A fast widening of 25 to 50bp over a week, especially alongside a rising VIX, is the setup where short premium gets run over, and it argues for smaller size, wider strikes, or standing down. Tight and stable spreads are the friendliest backdrop for selling premium, with the catch that you get paid less for it.";
+
 function fedRead(fed) {
   if (!fed || fed.effr === null || fed.effr === undefined) return "No Fed data right now.";
   const mid = (fed.target_from + fed.target_to) / 2;
@@ -1837,6 +1866,12 @@ function rateDetails(key) {
     return {title: `${key} Curve Spread`, value: `${sp.bps > 0 ? "+" : ""}${sp.bps}bp`, chip: bpsChip(sp.change_bps),
             what: RATE_WHAT[key], read: spreadRead(sp), trade: SPREAD_TRADE[key] || "",
             source: `Both legs come from Treasury's official daily curve for ${shortDate(sp.as_of)}, so the two yields are measured at the same moment. The live 10-Year in the snapshot can differ from the 10-Year used here during the session.`};
+  }
+  const credit = lastMacroData.credit || {};
+  if (key === "HY Spread" && credit.hy_bps !== null && credit.hy_bps !== undefined) {
+    return {title: "High Yield Credit Spread", value: `${credit.hy_bps}bp`, chip: bpsChip(credit.hy_change_bps),
+            what: RATE_WHAT[key], read: creditRead(credit), trade: CREDIT_TRADE,
+            source: `ICE BofA US High Yield index option-adjusted spread, via the St. Louis Fed, as of ${shortDate(credit.as_of)}. That series publishes with a one to three business day lag, so treat it as a trend gauge; HYG in the read above is the same-day check.`};
   }
   if (key === "Fed Funds Target" && fed.target_from !== null && fed.target_from !== undefined) {
     return {title: "Fed Funds Target Range", value: `${fed.target_from.toFixed(2)}–${fed.target_to.toFixed(2)}%`, chip: "",
@@ -1970,6 +2005,18 @@ async function loadMacro() {
         <span class="stamp">${sp.inverted ? "inverted" : "steepness"} · Treasury close ${esc(shortDate(sp.as_of))}</span>
       </div>`;
   });
+  const credit = j.credit || {};
+  if (credit.hy_bps !== null && credit.hy_bps !== undefined) {
+    statsHtml += `
+      <div class="macro-item spread clickable" data-rate="HY Spread">
+        <span class="label">HY Spread</span>
+        <span class="value-row">
+          <span class="value">${esc(credit.hy_bps)}bp</span>
+          ${bpsChip(credit.hy_change_bps)}
+        </span>
+        <span class="stamp">credit risk · ICE BofA ${esc(shortDate(credit.as_of))}</span>
+      </div>`;
+  }
   const fed = j.fed || {};
   if (fed.target_from !== null && fed.target_from !== undefined) {
     statsHtml += `
