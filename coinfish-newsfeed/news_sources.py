@@ -1716,10 +1716,23 @@ def _parse_fred_csv(text):
     return rows
 
 
+def _fred_get(url, timeout=20):
+    """FRED's edge drops plain `requests` connections (verified 2026-10-13: the
+    same URL returns 200 to curl and times out from requests, both locally and
+    from Railway - a TLS-fingerprint block, not an IP block). curl_cffi
+    impersonates a real Chrome handshake and gets through; plain requests is
+    kept as a fallback in case curl_cffi is ever unavailable."""
+    try:
+        from curl_cffi import requests as _cffi
+        return _cffi.get(url, impersonate="chrome", timeout=timeout)
+    except ImportError:
+        return _session.get(url, headers=YAHOO_HEADERS, timeout=timeout)
+
+
 def _fred_last_two(series, timeout=20):
     """(latest_value, latest_date, prior_value, error) from a FRED CSV series, in percent."""
     try:
-        resp = _session.get(FRED_CSV.format(series=series), headers=YAHOO_HEADERS, timeout=timeout)
+        resp = _fred_get(FRED_CSV.format(series=series), timeout=timeout)
         if resp.status_code != 200:
             return None, None, None, f"FRED {series} HTTP {resp.status_code}"
         rows = _parse_fred_csv(resp.text)

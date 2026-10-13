@@ -5,3 +5,4 @@ feedparser==6.0.11
 yfinance>=1.5.1
 gunicorn==22.0.0
 trafilatura>=2.0.0
+curl_cffi>=0.7.0
