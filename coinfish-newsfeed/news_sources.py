@@ -2004,7 +2004,32 @@ def fetch_bls_cpi_actuals():
         return None
 
 
-def patch_cpi_actuals_with_bls(rows, bls_data):
+_MONTH_NUMBERS = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+
+def _parse_bls_period(label):
+    """'August 2026' -> (2026, 8). None if it doesn't parse."""
+    try:
+        name, year = (label or "").strip().split()
+        return int(year), _MONTH_NUMBERS[name.lower()]
+    except Exception:
+        return None
+
+
+def _reference_month_for_release(date_str):
+    """CPI for month M is released in month M+1, so a release dated
+    2026-10-15 reports September 2026. Returns (year, month) or None."""
+    try:
+        d = _dt.strptime(date_str[:10], "%Y-%m-%d")
+    except Exception:
+        return None
+    return (d.year - 1, 12) if d.month == 1 else (d.year, d.month - 1)
+
+
+def patch_cpi_actuals_with_bls(rows, bls_data, default_date=None):
     """
     Mutates United States CPI/Core CPI (MoM)/(YoY) rows in-place, filling in
     the actual field from BLS's directly-computed figures (see
@@ -2012,8 +2037,20 @@ def patch_cpi_actuals_with_bls(rows, bls_data):
     Only touches the exact 4 headline rows produced by tag_cpi_period() -
     the index-level variants (CPI Index, n.s.a., etc.) are left alone since
     we don't compute raw index levels here, just % changes.
+
+    BUG FIX 2026-10-14: this used to patch any blank CPI row with BLS's most
+    recently PUBLISHED month, with no check that the two referred to the same
+    period. So an upcoming release showed the PREVIOUS month's print as its
+    "Actual" - e.g. on 2026-10-14, with September CPI not due until the 15th,
+    the row displayed August's figures as though the number were already out.
+    A release that has not happened must stay blank. Now the BLS period has
+    to equal the month that row's release actually reports (the month before
+    the release date) or the row is left alone.
     """
     if not bls_data:
+        return rows
+    bls_period = _parse_bls_period(bls_data.get("period"))
+    if not bls_period:
         return rows
     field_for_title = {
         "CPI (MoM)": "cpi_mom",
@@ -2028,9 +2065,15 @@ def patch_cpi_actuals_with_bls(rows, bls_data):
         if not field:
             continue
         current = (row.get("actual") or "").strip()
-        if current in ("", "&nbsp;"):
-            row["actual"] = bls_data[field]
-            row["actual_source"] = "bls"
+        if current not in ("", "&nbsp;"):
+            continue
+        # Only fill in when BLS's published month is the one this release covers.
+        expected = _reference_month_for_release(row.get("date") or default_date or "")
+        if expected is None or expected != bls_period:
+            continue
+        row["actual"] = bls_data[field]
+        row["actual_source"] = "bls"
+        row["actual_period"] = bls_data.get("period")
     return rows
 
 

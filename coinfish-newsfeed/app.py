@@ -542,8 +542,11 @@ def calendar():
         # from "calendar" (CACHE_TTL["bls_cpi"]) to respect BLS's
         # unregistered rate limit of 25 req/day.
         bls_cpi, _ = _cached("bls_cpi", CACHE_TTL["bls_cpi"], ns.fetch_bls_cpi_actuals)
-        ns.patch_cpi_actuals_with_bls(econ, bls_cpi)
-        ns.patch_cpi_actuals_with_bls(econ_week, bls_cpi)
+        # `today` (not nasdaq_econ_date) is the real-world date these rows
+        # belong to - see the Nasdaq +1 day quirk above. Week rows carry their
+        # own per-row date, so they ignore the default.
+        ns.patch_cpi_actuals_with_bls(econ, bls_cpi, default_date=today)
+        ns.patch_cpi_actuals_with_bls(econ_week, bls_cpi, default_date=today)
 
         econ_next_week, next_week_err = ns.fetch_econ_next_week(ECON_COUNTRIES_NASDAQ)
         if next_week_err:
