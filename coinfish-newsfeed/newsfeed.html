@@ -2035,7 +2035,7 @@ async function loadMacro() {
           <span class="value">${sp.bps > 0 ? "+" : ""}${esc(sp.bps)}bp</span>
           ${bpsChip(sp.change_bps)}
         </span>
-        <span class="stamp">${sp.inverted ? "inverted" : "steepness"} · Treasury close ${esc(shortDate(sp.as_of))}</span>
+        <span class="stamp">${sp.inverted ? "inverted" : "steepness"} · ${esc(sp.source === "live" ? "live" : `Treasury close ${shortDate(sp.as_of)}`)}</span>
       </div>`;
   });
   const credit = j.credit || {};
