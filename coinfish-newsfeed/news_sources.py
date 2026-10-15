@@ -1607,6 +1607,108 @@ def fetch_treasury_curve(timeout=15):
     return latest, prior, latest["NEW_DATE"][:10]
 
 
+# ---------------------------------------------------------------------------
+# Live yields for every tenor, including 2Y and 7Y.
+#
+# Yahoo only publishes four Treasury yield indices (^IRX 3M, ^FVX 5Y, ^TNX 10Y,
+# ^TYX 30Y) - there is no 2Y or 7Y - which is why those two rows used to show a
+# once-a-day Treasury curve value while their neighbours ticked live.
+#
+# CBOT's micro yield futures (2YY=F, 5YY=F, ...) look like the obvious fix and
+# are not: they barely trade. Checked 2026-10-15 against the cash market,
+# 5YY=F quoted 3.78 while ^FVX was 4.88, and 2YY=F's last print was from the
+# previous afternoon. Rejected - a stale quote that renders as a plausible
+# number is the exact failure this project keeps getting bitten by.
+#
+# CNBC's quote service carries the cash market for all six tenors and stamps
+# them with one shared quote time, which is what makes live curve spreads
+# honest (see build_yield_spreads). Keyless, no registration.
+# ---------------------------------------------------------------------------
+
+CNBC_QUOTE_URL = ("https://quote.cnbc.com/quote-html-webservice/restQuote/"
+                  "symbolType/symbol?symbols={symbols}&requestMethod=itv&noform=1"
+                  "&partnerId=2&fund=1&exthrs=1&output=json&events=1")
+
+CNBC_YIELD_SYMBOLS = {
+    "3-Month": "US3M",
+    "2-Year": "US2Y",
+    "5-Year": "US5Y",
+    "7-Year": "US7Y",
+    "10-Year": "US10Y",
+    "30-Year": "US30Y",
+}
+
+# Legs of a spread must be quoted close enough together to be comparable.
+CNBC_MAX_LEG_SKEW_SECONDS = 600
+
+
+def _cnbc_num(value):
+    """'4.949%' or '-0.141' -> float. None if it doesn't parse."""
+    try:
+        return float(str(value).replace("%", "").replace(",", "").strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def fetch_cnbc_yields(timeout=10):
+    """
+    {"2-Year": {"pct": 4.721, "change_bps": -8.1, "as_of": "2026-10-15T09:19:56-04:00",
+                "stale": False}, ...} or None if the call fails.
+
+    Returns None rather than a partial set: a spread built from a mix of live
+    and missing legs is worse than no live spread at all.
+    """
+    try:
+        url = CNBC_QUOTE_URL.format(symbols="|".join(CNBC_YIELD_SYMBOLS.values()))
+        resp = _session.get(url, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+        quotes = resp.json().get("FormattedQuoteResult", {}).get("FormattedQuote", [])
+        by_symbol = {q.get("symbol"): q for q in quotes}
+
+        today = _dt.now(_ET_ZONE).date()
+        out = {}
+        for label, symbol in CNBC_YIELD_SYMBOLS.items():
+            q = by_symbol.get(symbol)
+            if not q:
+                return None
+            pct = _cnbc_num(q.get("last"))
+            if pct is None or not 0 < pct < 25:   # sanity band: a Treasury yield, not a price
+                return None
+            change = _cnbc_num(q.get("change"))
+            prev = _cnbc_num(q.get("previous_day_closing"))
+            if change is None and prev is not None:
+                change = pct - prev
+            stamp = _parse_cnbc_time(q.get("last_time"))
+            out[label] = {
+                "pct": round(pct, 3),
+                "change_bps": round(change * 100, 1) if change is not None else None,
+                "as_of": q.get("last_time"),
+                "stamp": stamp,
+                # Outside cash-market hours CNBC keeps serving the last print,
+                # so a quote from an earlier day is flagged rather than passed
+                # off as live.
+                "stale": bool(stamp and stamp.date() != today),
+                "market_status": q.get("curmktstatus"),
+            }
+        return out
+    except Exception:
+        return None
+
+
+def _parse_cnbc_time(value):
+    """'2026-10-15T09:19:56.000-0400' -> aware datetime, or None."""
+    if not value:
+        return None
+    text = str(value).replace(".000", "")
+    if len(text) >= 5 and text[-5] in "+-" and text[-3] != ":":
+        text = text[:-2] + ":" + text[-2:]   # -0400 -> -04:00 for fromisoformat
+    try:
+        return _dt.fromisoformat(text)
+    except ValueError:
+        return None
+
+
 def _curve_val(row, key):
     try:
         return float(row.get(key)) if row and row.get(key) else None
@@ -1616,9 +1718,20 @@ def _curve_val(row, key):
 
 def fetch_treasury_yields():
     """Yield per tenor with its day's move in basis points.
-    Intraday tenors come from yfinance (change vs. previous close); 2Y and 7Y
-    come from Treasury's daily curve (change vs. prior published day)."""
+
+    Three sources, in order of preference:
+      1. CNBC's cash-market quotes - all six tenors, one shared quote time.
+         This is what gives 2Y and 7Y a live number (added 2026-10-15; before
+         it they sat at a once-a-day Treasury value while 3M/5Y/10Y/30Y
+         ticked beside them, which is what Billy noticed).
+      2. yfinance, for the four tenors Yahoo publishes an index for.
+      3. Treasury's own daily par curve, as the floor.
+
+    Every row also keeps its same-day Treasury close in curve_pct, so spreads
+    always have an apples-to-apples fallback available.
+    """
     latest, prior, curve_date = fetch_treasury_curve()
+    cnbc = fetch_cnbc_yields() or {}
     out = []
     for label, ticker, curve_key in YIELD_ROWS:
         row = {"label": label, "ticker": ticker, "yield_pct": None, "change_bps": None,
@@ -1632,7 +1745,16 @@ def fetch_treasury_yields():
             curve_prev = _curve_val(prior, curve_key)
             if curve_prev is not None:
                 row["curve_change_bps"] = round((curve_val - curve_prev) * 100, 1)
-        if ticker:
+
+        quote = cnbc.get(label)
+        if quote and not quote["stale"]:
+            row["yield_pct"] = quote["pct"]
+            row["change_bps"] = quote["change_bps"]
+            row["source"] = "live"
+            row["as_of"] = quote["as_of"]
+            row["quote_time"] = quote["as_of"]
+
+        if row["yield_pct"] is None and ticker:
             try:
                 fast = yf.Ticker(ticker).fast_info
                 last = getattr(fast, "last_price", None)
@@ -1644,6 +1766,15 @@ def fetch_treasury_yields():
                         row["change_bps"] = round((float(last) - float(prev_close)) * 100, 1)
             except Exception as exc:
                 row["error"] = str(exc)
+
+        # A stale CNBC print (weekend, overnight) still beats a curve value
+        # that can be a full business day older - but it's labelled as a close.
+        if row["yield_pct"] is None and quote:
+            row["yield_pct"] = quote["pct"]
+            row["change_bps"] = quote["change_bps"]
+            row["source"] = "close"
+            row["as_of"] = quote["as_of"]
+
         if row["yield_pct"] is None and row["curve_pct"] is not None:
             row["yield_pct"] = row["curve_pct"]
             row["change_bps"] = row["curve_change_bps"]
@@ -1657,23 +1788,54 @@ def build_yield_spreads(yields):
     """Curve spreads in bps. 2s10s is the classic growth/recession read;
     3m10y is the version the NY Fed's recession model uses.
 
-    Both legs are taken from Treasury's official daily curve rather than the
-    live quotes, because 2Y has no live feed - mixing a live 10Y against a
-    day-old 2Y produced a spread (and a daily change) that was simply wrong
-    intraday. Apples-to-apples and a day old beats live and misleading.
+    These used to be pinned to Treasury's daily curve for both legs. That was
+    not conservatism for its own sake: in September a live 10Y against a
+    day-old 2Y put 3m10s at 108.6bp when the real same-day number was 92bp,
+    and the daily "change" was meaningless. Apples-to-apples and a day old
+    beat live and wrong.
+
+    Now that CNBC gives every tenor a live quote on one shared timestamp
+    (2026-10-15), the spreads can be live without that trade-off - but only
+    when both legs really are from the same moment. _live_leg() enforces
+    that; anything else falls back to the curve and says so in `source`.
     """
     by_label = {y["label"]: y for y in yields}
 
+    def _live_leg(row):
+        """(pct, change_bps, stamp) if this row is a live quote we can pair."""
+        if not row or row.get("source") != "live" or row.get("quote_time") is None:
+            return None
+        if row.get("yield_pct") is None or row.get("change_bps") is None:
+            return None
+        stamp = _parse_cnbc_time(row["quote_time"])
+        return (row["yield_pct"], row["change_bps"], stamp) if stamp else None
+
     def spread(long_label, short_label, name, note):
         a, b = by_label.get(long_label), by_label.get(short_label)
-        if not a or not b or a.get("curve_pct") is None or b.get("curve_pct") is None:
+        if not a or not b:
+            return None
+
+        live_a, live_b = _live_leg(a), _live_leg(b)
+        if live_a and live_b:
+            skew = abs((live_a[2] - live_b[2]).total_seconds())
+            if skew <= CNBC_MAX_LEG_SKEW_SECONDS:
+                return {"label": name,
+                        "bps": round((live_a[0] - live_b[0]) * 100, 1),
+                        "change_bps": round(live_a[1] - live_b[1], 1),
+                        "inverted": live_a[0] < live_b[0],
+                        "as_of": a.get("quote_time"),
+                        "source": "live",
+                        "note": note}
+
+        if a.get("curve_pct") is None or b.get("curve_pct") is None:
             return None
         bps = round((a["curve_pct"] - b["curve_pct"]) * 100, 1)
         change = None
         if a.get("curve_change_bps") is not None and b.get("curve_change_bps") is not None:
             change = round(a["curve_change_bps"] - b["curve_change_bps"], 1)
         return {"label": name, "bps": bps, "change_bps": change,
-                "inverted": bps < 0, "as_of": a.get("curve_date"), "note": note}
+                "inverted": bps < 0, "as_of": a.get("curve_date"),
+                "source": "treasury", "note": note}
 
     out = [
         spread("10-Year", "2-Year", "2s10s", "10-Year minus 2-Year. Negative (inverted) has preceded every modern recession; steepening off an inversion is the part that usually coincides with trouble."),

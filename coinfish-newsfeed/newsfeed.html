@@ -1855,15 +1855,42 @@ const FED_TRADE = "The target range only changes on FOMC days, so it is your bas
 let openRateKey = null;
 let lastMacroData = {};
 
+// Yield rows now carry one of three source values. "live" is a real-time cash
+// market quote (CNBC covers all six tenors, so 2Y and 7Y are live too as of
+// 2026-10-15); "close" is CNBC's last print outside market hours; "treasury"
+// is the once-a-day par curve, the floor we fall back to.
+function yieldStampShort(y) {
+  if (y.source === "treasury") return `Treasury close ${shortDate(y.as_of)}`;
+  if (y.source === "close") return `last close ${quoteTime(y.as_of)}`;
+  return "live";
+}
+
+function yieldStampLong(y) {
+  if (y.source === "treasury") {
+    return `Treasury's official daily par curve, published after the close on ${shortDate(y.as_of)}. The live feed didn't answer for this tenor, so this is the prior day's figure.`;
+  }
+  if (y.source === "close") {
+    return `Last cash-market print, ${quoteTime(y.as_of)}. The Treasury market is closed, so this is where it settled rather than a moving quote.`;
+  }
+  return `Live cash-market quote${y.as_of ? ` as of ${quoteTime(y.as_of)}` : ""}, with the change measured against yesterday's close.`;
+}
+
+// "2026-10-15T09:19:56.000-0400" -> "9:19 AM ET"
+function quoteTime(iso) {
+  if (!iso) return "";
+  const d = new Date(String(iso).replace(".000", ""));
+  if (isNaN(d)) return "";
+  return d.toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit",
+                                        timeZone: "America/New_York"}) + " ET";
+}
+
 function rateDetails(key) {
   const yields = lastMacroData.yields || [];
   const spreads = lastMacroData.yield_spreads || [];
   const fed = lastMacroData.fed || {};
   const y = yields.find(v => v.label === key);
   if (y) {
-    const stamp = y.source === "treasury"
-      ? `Treasury's official daily curve, published after the close on ${shortDate(y.as_of)}. There is no free live feed for this tenor, so during the session it shows the prior day.`
-      : "Live intraday, with the change measured against yesterday's close.";
+    const stamp = yieldStampLong(y);
     return {title: `${key} Treasury Yield`, value: `${y.yield_pct}%`, chip: bpsChip(y.change_bps),
             what: RATE_WHAT[key], read: yieldRead(y), trade: yieldTrade(y), source: stamp};
   }
@@ -1871,7 +1898,9 @@ function rateDetails(key) {
   if (sp) {
     return {title: `${key} Curve Spread`, value: `${sp.bps > 0 ? "+" : ""}${sp.bps}bp`, chip: bpsChip(sp.change_bps),
             what: RATE_WHAT[key], read: spreadRead(sp), trade: SPREAD_TRADE[key] || "",
-            source: `Both legs come from Treasury's official daily curve for ${shortDate(sp.as_of)}, so the two yields are measured at the same moment. The live 10-Year in the snapshot can differ from the 10-Year used here during the session.`};
+            source: sp.source === "live"
+              ? `Both legs are live cash-market quotes from the same moment (${quoteTime(sp.as_of)}), which is what makes the spread and its daily change meaningful intraday.`
+              : `Both legs come from Treasury's official daily curve for ${shortDate(sp.as_of)}, so the two yields are measured at the same moment. Used whenever a live quote is missing or the two legs aren't from the same moment - a live long leg against a stale short leg produces a spread that looks real and isn't.`};
   }
   const credit = lastMacroData.credit || {};
   if (key === "HY Spread" && credit.hy_bps !== null && credit.hy_bps !== undefined) {
@@ -1987,9 +2016,7 @@ async function loadMacro() {
   }
   (yields || []).forEach(y => {
     if (y.yield_pct === null || y.yield_pct === undefined) return;
-    const stamp = y.source === "treasury"
-      ? `Treasury close ${esc(shortDate(y.as_of))}`
-      : "live";
+    const stamp = esc(yieldStampShort(y));
     statsHtml += `
       <div class="macro-item clickable" data-rate="${esc(y.label)}">
         <span class="label">${esc(y.label)} Yield</span>
