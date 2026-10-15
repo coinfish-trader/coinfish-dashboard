@@ -1629,6 +1629,18 @@ CNBC_QUOTE_URL = ("https://quote.cnbc.com/quote-html-webservice/restQuote/"
                   "symbolType/symbol?symbols={symbols}&requestMethod=itv&noform=1"
                   "&partnerId=2&fund=1&exthrs=1&output=json&events=1")
 
+# CNBC 403s requests' default "python-requests/x.y" User-Agent. Confirmed
+# 2026-10-15: identical URL returns 200 with a browser UA (or with NO
+# User-Agent at all) and 403 with the requests default, from the same IP.
+# This cost a deploy - the fallbacks held, so nothing broke visibly, the
+# feature was just silently inert.
+CNBC_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://www.cnbc.com/",
+}
+
 CNBC_YIELD_SYMBOLS = {
     "3-Month": "US3M",
     "2-Year": "US2Y",
@@ -1660,7 +1672,7 @@ def fetch_cnbc_yields(timeout=10):
     """
     try:
         url = CNBC_QUOTE_URL.format(symbols="|".join(CNBC_YIELD_SYMBOLS.values()))
-        resp = _session.get(url, timeout=timeout)
+        resp = _session.get(url, headers=CNBC_HEADERS, timeout=timeout)
         if resp.status_code != 200:
             return None
         quotes = resp.json().get("FormattedQuoteResult", {}).get("FormattedQuote", [])
