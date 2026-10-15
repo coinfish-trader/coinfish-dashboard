@@ -214,7 +214,9 @@ CACHE_TTL = {
     "movers": 60,
     "marketcap": 300,    # market cap barely moves intraday, longer TTL than movers
     "heatmap": 120,
-    "bls_cpi": 900,       # separate from "calendar" - BLS unregistered API is rate-limited to 25 req/day
+    "bls_cpi": 120,       # only hit in the 8:28-11:00 ET window of a day whose CPI/PPI
+                          # print is actually outstanding, and capped by _bls_budget_take()
+                          # below, so a 2 min TTL stays well inside BLS's 25 req/day/IP limit
 }
 
 _cache = {}
@@ -244,6 +246,35 @@ def _cached(key, ttl, builder):
         data = builder()
         _cache[key] = {"data": data, "ts": time.time()}
         return data, _cache[key]["ts"]
+
+
+# BLS allows unregistered callers 25 requests/day/IP and counts them per
+# calendar day. The time window in ns.inflation_backfill_due() keeps normal
+# days to one or two calls, but a release BLS never publishes in a shape we
+# recognise would retry every TTL for the whole window, so this is a hard
+# stop well short of the limit - better to lose the fallback for one print
+# than to have no quota left for the next one.
+_BLS_DAILY_CAP = 18
+_bls_budget = {"day": None, "used": 0}
+_bls_budget_lock = threading.Lock()
+
+
+def _bls_budget_take():
+    today = datetime.now().date()
+    with _bls_budget_lock:
+        if _bls_budget["day"] != today:
+            _bls_budget.update(day=today, used=0)
+        if _bls_budget["used"] >= _BLS_DAILY_CAP:
+            return False
+        _bls_budget["used"] += 1
+        return True
+
+
+def _fetch_bls_inflation_budgeted():
+    """Returns None (i.e. "no fallback today") once the daily cap is spent."""
+    if not _bls_budget_take():
+        return None
+    return ns.fetch_bls_inflation_actuals()
 
 
 @app.after_request
@@ -534,19 +565,23 @@ def calendar():
         if week_err:
             errors.append(week_err)
 
-        # Nasdaq's actual field can lag the real release by hours (see
-        # fetch_bls_cpi_actuals docstring in news_sources.py - found
-        # 2026-07-14 when CPI was already out and reported everywhere but
-        # Nasdaq's feed still showed blank). Patch CPI/Core CPI rows from
-        # BLS's own public API, which has no such lag. Cached separately
-        # from "calendar" (CACHE_TTL["bls_cpi"]) to respect BLS's
-        # unregistered rate limit of 25 req/day.
-        bls_cpi, _ = _cached("bls_cpi", CACHE_TTL["bls_cpi"], ns.fetch_bls_cpi_actuals)
-        # `today` (not nasdaq_econ_date) is the real-world date these rows
-        # belong to - see the Nasdaq +1 day quirk above. Week rows carry their
-        # own per-row date, so they ignore the default.
-        ns.patch_cpi_actuals_with_bls(econ, bls_cpi, default_date=today)
-        ns.patch_cpi_actuals_with_bls(econ_week, bls_cpi, default_date=today)
+        # Nasdaq's actual field can lag the real release by ~30 minutes (see
+        # fetch_bls_inflation_actuals' docstring in news_sources.py - first hit
+        # 2026-07-14 with CPI, again 2026-10-15 with PPI). Patch blank US
+        # CPI/PPI rows from BLS's own public API, which has no such lag.
+        # Cached separately from "calendar" (CACHE_TTL["bls_cpi"]) and only
+        # called while a print is actually outstanding, because BLS caps
+        # unregistered callers at 25 requests/day/IP - fetching on every
+        # refresh regardless burned the whole quota by mid-morning and left
+        # nothing for the release itself.
+        if (ns.inflation_backfill_due(econ, default_date=today)
+                or ns.inflation_backfill_due(econ_week, default_date=today)):
+            bls_data, _ = _cached("bls_cpi", CACHE_TTL["bls_cpi"], _fetch_bls_inflation_budgeted)
+            # `today` (not nasdaq_econ_date) is the real-world date these rows
+            # belong to - see the Nasdaq +1 day quirk above. Week rows carry
+            # their own per-row date, so they ignore the default.
+            ns.patch_inflation_actuals_with_bls(econ, bls_data, default_date=today)
+            ns.patch_inflation_actuals_with_bls(econ_week, bls_data, default_date=today)
 
         econ_next_week, next_week_err = ns.fetch_econ_next_week(ECON_COUNTRIES_NASDAQ)
         if next_week_err:

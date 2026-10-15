@@ -1926,80 +1926,124 @@ def fetch_treasury_auctions(timeout=15, days_back=10):
 # blank) actual untouched rather than breaking the calendar endpoint.
 # ---------------------------------------------------------------------------
 
-_BLS_CPI_SERIES = {
-    "cpi_yoy": "CUUR0000SA0",
-    "cpi_mom": "CUSR0000SA0",
-    "core_cpi_yoy": "CUUR0000SA0L1E",
-    "core_cpi_mom": "CUSR0000SA0L1E",
+# Inflation rows we can backfill from BLS, grouped by release family so each
+# family's period is checked against its own release date. YoY uses the
+# not-seasonally-adjusted index, MoM the seasonally adjusted one, which is how
+# both releases are quoted.
+#
+# PPI added 2026-10-15 after Billy flagged that a PPI print sat with empty
+# Actuals for ~30 minutes: the July backfill only ever covered CPI, so PPI had
+# no fallback at all and waited on Nasdaq.
+BLS_INFLATION_SERIES = {
+    "cpi": {
+        "CPI (YoY)": "CUUR0000SA0",
+        "CPI (MoM)": "CUSR0000SA0",
+        "Core CPI (YoY)": "CUUR0000SA0L1E",
+        "Core CPI (MoM)": "CUSR0000SA0L1E",
+    },
+    "ppi": {
+        "PPI (YoY)": "WPUFD4",
+        "PPI (MoM)": "WPSFD4",
+        "Core PPI (YoY)": "WPUFD49116",
+        "Core PPI (MoM)": "WPSFD49116",
+    },
 }
 
 
-def _bls_series_latest_and_prior(series_id, want_yoy):
+BLS_V2_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+
+
+def _bls_monthly(rows):
+    """Monthly observations only, newest first.
+
+    BLS mixes an annual-average row into the same series, period "M13",
+    periodName "Annual". A plain startswith("M") test keeps it, and because
+    "M13" sorts above "M12" it then gets read as the newest month - which
+    turned a +1.4% MoM into +566% in testing. Only M01-M12 are real months.
     """
-    Fetches one BLS series and returns (pct_change, period_label) using the
-    latest datapoint vs. either the prior month (MoM) or the same month a
-    year earlier (YoY). Returns (None, None) if the series doesn't have
-    enough history or the request fails.
-    """
-    resp = requests.get(
-        f"https://api.bls.gov/publicAPI/v1/timeseries/data/{series_id}",
-        timeout=8,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    series = payload.get("Results", {}).get("series", [])
-    if not series:
-        return None, None
-    rows = series[0].get("data", [])
-    # BLS returns newest-first with year/period ("M01".."M12") fields.
-    rows = [r for r in rows if r.get("period", "").startswith("M") and r.get("value") not in (None, "-")]
+    out = []
+    for r in rows:
+        period = r.get("period", "")
+        if len(period) != 3 or period[0] != "M" or not period[1:].isdigit():
+            continue
+        if not 1 <= int(period[1:]) <= 12:
+            continue
+        if r.get("value") in (None, "", "-"):
+            continue
+        out.append(r)
+    out.sort(key=lambda r: (int(r["year"]), int(r["period"][1:])), reverse=True)
+    return out
+
+
+def _bls_pct(rows, title):
+    """(pct_change, period_label) for one series' rows, newest first."""
+    rows = _bls_monthly(rows)
     if not rows:
         return None, None
     latest = rows[0]
-    latest_val = float(latest["value"])
-    latest_year, latest_period = latest["year"], latest["period"]
-    period_label = f"{latest.get('periodName', '')} {latest_year}"
-
-    if want_yoy:
-        target_year = str(int(latest_year) - 1)
-        prior = next((r for r in rows if r["year"] == target_year and r["period"] == latest_period), None)
+    label = f"{latest.get('periodName', '')} {latest['year']}"
+    if title.endswith("(YoY)"):
+        prior = next((r for r in rows
+                      if int(r["year"]) == int(latest["year"]) - 1
+                      and r["period"] == latest["period"]), None)
     else:
-        # Prior calendar month - rows are in chronological-descending order
-        # so it's simply the next row, unless that row is a non-monthly
-        # "Annual" summary row (already filtered out above).
         prior = rows[1] if len(rows) > 1 else None
-
     if prior is None:
-        return None, period_label
-    prior_val = float(prior["value"])
+        return None, label
+    latest_val, prior_val = float(latest["value"]), float(prior["value"])
     if prior_val == 0:
-        return None, period_label
-    pct = (latest_val - prior_val) / prior_val * 100
-    return pct, period_label
+        return None, label
+    pct = round((latest_val - prior_val) / prior_val * 100, 1)
+    if pct == 0:
+        pct = 0.0  # avoid "-0.0%" from tiny negative values rounding to zero
+    return f"{pct:+.1f}%", label
 
 
-def fetch_bls_cpi_actuals():
+def fetch_bls_inflation_actuals(timeout=15):
     """
-    Returns {"cpi_mom": "-0.4%", "cpi_yoy": "+3.5%", "core_cpi_mom": "0.0%",
-    "core_cpi_yoy": "+2.6%", "period": "June 2026"} computed directly from
-    BLS's public API, or None if anything fails (network, rate limit,
-    unexpected shape) - callers must treat None as "no fallback available"
-    and leave Nasdaq's value as-is.
+    {"cpi": {"CPI (MoM)": "+0.6%", ..., "period": "September 2026"},
+     "ppi": {...}} computed from BLS's public API, or None if anything fails
+    (network, rate limit, unexpected shape) - callers treat None as "no
+    fallback available" and leave Nasdaq's value alone.
+
+    REWRITTEN 2026-10-14/15: this used to make FOUR v1 GETs per refresh (CPI
+    only). At a 15 minute TTL that is 384 requests/day against BLS's
+    unregistered limit of 25/day/IP, so the quota died ~90 minutes after boot
+    and the fallback was dead exactly when a release needed it. Now one v2
+    POST carries every series for both releases, and callers only invoke it
+    while a print is actually outstanding.
     """
     try:
+        this_year = _dt.now().year
+        wanted = {title: sid for fam in BLS_INFLATION_SERIES.values() for title, sid in fam.items()}
+        payload = {
+            "seriesid": sorted(set(wanted.values())),
+            "startyear": str(this_year - 1),
+            "endyear": str(this_year),
+        }
+        resp = _session.post(BLS_V2_URL, json=payload, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+        body = resp.json()
+        if body.get("status") != "REQUEST_SUCCEEDED":
+            return None
+        by_id = {s.get("seriesID"): s.get("data", []) for s in body.get("Results", {}).get("series", [])}
+
         out = {}
-        period_label = None
-        for key, series_id in _BLS_CPI_SERIES.items():
-            want_yoy = key.endswith("_yoy")
-            pct, period_label = _bls_series_latest_and_prior(series_id, want_yoy)
-            if pct is None:
-                return None
-            rounded = round(pct, 1)
-            if rounded == 0:
-                rounded = 0.0  # avoid "-0.0%" from tiny negative values rounding to zero
-            out[key] = f"{rounded:+.1f}%"
-        out["period"] = period_label
-        return out
+        for family, titles in BLS_INFLATION_SERIES.items():
+            fam_out = {}
+            period_label = None
+            for title, series_id in titles.items():
+                pct, label = _bls_pct(by_id.get(series_id, []), title)
+                if pct is None:
+                    fam_out = {}
+                    break
+                fam_out[title] = pct
+                period_label = label or period_label
+            if fam_out:
+                fam_out["period"] = period_label
+                out[family] = fam_out
+        return out or None
     except Exception:
         return None
 
@@ -2029,51 +2073,88 @@ def _reference_month_for_release(date_str):
     return (d.year - 1, 12) if d.month == 1 else (d.year, d.month - 1)
 
 
-def patch_cpi_actuals_with_bls(rows, bls_data, default_date=None):
-    """
-    Mutates United States CPI/Core CPI (MoM)/(YoY) rows in-place, filling in
-    the actual field from BLS's directly-computed figures (see
-    fetch_bls_cpi_actuals docstring) wherever Nasdaq's actual is still blank.
-    Only touches the exact 4 headline rows produced by tag_cpi_period() -
-    the index-level variants (CPI Index, n.s.a., etc.) are left alone since
-    we don't compute raw index levels here, just % changes.
+_INFLATION_TITLE_FAMILY = {title: fam for fam, titles in BLS_INFLATION_SERIES.items() for title in titles}
 
-    BUG FIX 2026-10-14: this used to patch any blank CPI row with BLS's most
-    recently PUBLISHED month, with no check that the two referred to the same
-    period. So an upcoming release showed the PREVIOUS month's print as its
-    "Actual" - e.g. on 2026-10-14, with September CPI not due until the 15th,
-    the row displayed August's figures as though the number were already out.
-    A release that has not happened must stay blank. Now the BLS period has
-    to equal the month that row's release actually reports (the month before
-    the release date) or the row is left alone.
+
+# CPI and PPI are both released at 8:30 a.m. ET. The backfill window closes
+# at 11:00 so a release that neither BLS nor Nasdaq ever fills can't keep
+# retrying all day.
+_BLS_WINDOW_ET = ((8, 28), (11, 0))
+
+
+def inflation_backfill_due(rows, default_date=None, now=None):
+    """
+    True only when a US CPI/PPI Actual is outstanding for a release that has
+    ALREADY happened TODAY, inside the backfill window above.
+
+    The date and time checks are not cosmetic - they are what keeps the
+    fallback alive. A naive "is any inflation Actual blank" gate looks
+    equivalent but is not, because /api/calendar also feeds BLS the whole
+    current week: a Thursday CPI row sits blank from Monday 00:00, so the
+    gate would stand open for ~3 days and burn BLS's 25 requests/day/IP
+    allowance long before the print it exists to catch. Pre-release calls
+    are useless anyway - BLS has no more data than Nasdaq does.
+    """
+    now = now or _dt.now(_ET_ZONE)
+    (open_h, open_m), (close_h, close_m) = _BLS_WINDOW_ET
+    minutes = now.hour * 60 + now.minute
+    if not (open_h * 60 + open_m) <= minutes < (close_h * 60 + close_m):
+        return False
+    today = now.date().isoformat()
+    for row in rows or []:
+        if row.get("country") != "United States":
+            continue
+        if (row.get("eventName") or "").strip() not in _INFLATION_TITLE_FAMILY:
+            continue
+        if (row.get("actual") or "").strip() not in ("", "&nbsp;"):
+            continue
+        if ((row.get("date") or default_date or "")[:10]) == today:
+            return True
+    return False
+
+
+def patch_inflation_actuals_with_bls(rows, bls_data, default_date=None):
+    """
+    Fills blank US CPI/PPI Actuals from BLS's own data, so a print shows up
+    within minutes instead of waiting on Nasdaq (which can lag ~30 minutes).
+    Only the headline MoM/YoY rows produced by tag_cpi_period() are touched.
+
+    Two guards, both learned the hard way:
+
+    1. PERIOD MATCH (2026-10-14). This used to patch any blank row with BLS's
+       most recently published month, so an upcoming release showed the
+       PREVIOUS month's print as its "Actual". The BLS period must equal the
+       month that row's release reports (the month before the release date).
+
+    2. PROVISIONAL (2026-10-15). A value computed from BLS's current index can
+       differ slightly from the figure as reported on release day, because the
+       seasonally adjusted index gets revised - September 2026 core PPI was
+       reported +0.7% but recomputes to +0.5% against the revised August
+       index. So anything filled here is marked actual_source="bls" for the UI
+       to flag, and because Nasdaq's rows are refetched every refresh, the
+       official figure overwrites it as soon as Nasdaq publishes.
     """
     if not bls_data:
         return rows
-    bls_period = _parse_bls_period(bls_data.get("period"))
-    if not bls_period:
-        return rows
-    field_for_title = {
-        "CPI (MoM)": "cpi_mom",
-        "CPI (YoY)": "cpi_yoy",
-        "Core CPI (MoM)": "core_cpi_mom",
-        "Core CPI (YoY)": "core_cpi_yoy",
-    }
     for row in rows:
         if row.get("country") != "United States":
             continue
-        field = field_for_title.get((row.get("eventName") or "").strip())
-        if not field:
+        title = (row.get("eventName") or "").strip()
+        family = _INFLATION_TITLE_FAMILY.get(title)
+        if not family:
             continue
-        current = (row.get("actual") or "").strip()
-        if current not in ("", "&nbsp;"):
+        fam_data = bls_data.get(family)
+        if not fam_data or title not in fam_data:
             continue
-        # Only fill in when BLS's published month is the one this release covers.
+        if (row.get("actual") or "").strip() not in ("", "&nbsp;"):
+            continue  # Nasdaq has the official figure - always prefer it
+        bls_period = _parse_bls_period(fam_data.get("period"))
         expected = _reference_month_for_release(row.get("date") or default_date or "")
-        if expected is None or expected != bls_period:
+        if not bls_period or expected is None or expected != bls_period:
             continue
-        row["actual"] = bls_data[field]
+        row["actual"] = fam_data[title]
         row["actual_source"] = "bls"
-        row["actual_period"] = bls_data.get("period")
+        row["actual_period"] = fam_data.get("period")
     return rows
 
 

@@ -901,6 +901,12 @@
   .econ-stat-cell.actual { color: var(--off-white); }
   .econ-stat-cell.actual.hot { color: var(--red); }
   .econ-stat-cell.actual.cold { color: var(--blue-bright); }
+  /* Actual backfilled from BLS ahead of the official feed - dotted underline
+     marks it as provisional so a value that later revises isn't mistaken for
+     the confirmed print. */
+  .econ-pop-provisional { margin-top: 8px; font-size: 0.68rem; line-height: 1.4; color: var(--muted); border-left: 2px solid var(--muted); padding-left: 8px; }
+  .econ-stat-cell.actual.provisional,
+  .econ-stat.actual.provisional b { border-bottom: 1px dotted currentColor; cursor: help; }
 
   .econ-table-head { display: flex; align-items: center; gap: 10px; padding: 0 0 4px 0; }
   .econ-table-head-spacer { flex: 1 1 auto; }
@@ -2369,13 +2375,29 @@ function econSurpriseClass(forecast, actual) {
   return "";
 }
 
-function buildEconStats(prior, forecast, actual) {
+// An Actual that came from our own BLS backfill rather than the calendar feed
+// (actual_source === "bls") is flagged provisional: it's computed from BLS's
+// current index, and the seasonally adjusted prior month sometimes gets
+// revised, so it can land a tenth or two off the figure quoted on release
+// day. It's replaced automatically once the official value publishes.
+function econProvisional(e) {
+  return (e && e.actual_source === "bls") ? "provisional" : "";
+}
+
+function econProvisionalTitle(e) {
+  if (!econProvisional(e)) return "";
+  const period = e.actual_period ? ` for ${e.actual_period}` : "";
+  return ` title="Preliminary - computed from BLS data${period}. Updates when the official figure publishes."`;
+}
+
+function buildEconStats(prior, forecast, actual, flag, flagTitle) {
   const parts = [];
   if (prior !== null) parts.push(`<span class="econ-stat prior">Prior <b>${esc(prior)}</b></span>`);
   if (forecast !== null) parts.push(`<span class="econ-stat forecast">Forecast <b>${esc(forecast)}</b></span>`);
   if (actual !== null) {
     const surprise = econSurpriseClass(forecast, actual);
-    parts.push(`<span class="econ-stat actual ${surprise}">Actual <b>${esc(actual)}</b></span>`);
+    const cls = `econ-stat actual ${surprise} ${flag || ""}`.trim();
+    parts.push(`<span class="${cls}"${flagTitle || ""}>Actual <b>${esc(actual)}</b></span>`);
   }
   return parts.length ? `<div class="econ-stats">${parts.join("")}</div>` : "";
 }
@@ -2386,12 +2408,14 @@ function buildEconStats(prior, forecast, actual) {
 // the header - a missing value shows as a faint dash rather than collapsing
 // the column. Order is Prev -> Fcst -> Actual per Billy's ask (reads
 // left-to-right as "what it was, what's expected, what it came in at").
-function buildEconStatsRow(prior, forecast, actual) {
-  const cell = (v, cls) => v !== null
-    ? `<span class="econ-stat-cell ${cls}">${esc(v)}</span>`
+function buildEconStatsRow(prior, forecast, actual, flag, flagTitle) {
+  const cell = (v, cls, attrs) => v !== null
+    ? `<span class="econ-stat-cell ${cls}"${attrs || ""}>${esc(v)}</span>`
     : `<span class="econ-stat-cell empty">-</span>`;
-  const actualCls = actual !== null ? `actual ${econSurpriseClass(forecast, actual)}`.trim() : "actual";
-  return `<div class="econ-stats-row">${cell(prior, "prior")}${cell(forecast, "forecast")}${cell(actual, actualCls)}</div>`;
+  const actualCls = actual !== null
+    ? `actual ${econSurpriseClass(forecast, actual)} ${flag || ""}`.replace(/\s+/g, " ").trim()
+    : "actual";
+  return `<div class="econ-stats-row">${cell(prior, "prior")}${cell(forecast, "forecast")}${cell(actual, actualCls, flagTitle)}</div>`;
 }
 
 function econTableHead(scope) {
@@ -2530,7 +2554,8 @@ function renderEcon() {
     econTodayRendered = chronoSort(byImportance.slice(0, 14));
     const nextIdx = nextEconIndex(econTodayRendered, "today");
     econEl.innerHTML = econTodayRendered.length ? econTableHead("today") + econTodayRendered.map((e, i) => {
-      const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+      const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual),
+      econProvisional(e), econProvisionalTitle(e));
       const { pastClass, divider } = econRowClassesAndDivider(nextIdx, i);
       return `
       ${divider}
@@ -2582,7 +2607,8 @@ function renderEconDayGroups(list, scope) {
       html += econDayHeader(lastDate);
       groupOpen = true;
     }
-    const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+    const statsRow = buildEconStatsRow(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual),
+      econProvisional(e), econProvisionalTitle(e));
     const { pastClass, divider } = econRowClassesAndDivider(nextIdx, i);
     html += `
       ${divider}
@@ -2634,7 +2660,8 @@ function showEconPopup(rowEl) {
   const when = scope === "today" ? `Today · ${e.gmt || ""}` : `${e.date || ""} ${e.gmt || ""}`;
   const country = e.country ? ` · ${e.country}` : "";
 
-  const stats = buildEconStats(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual));
+  const stats = buildEconStats(econStatVal(e.previous), econStatVal(e.consensus), econStatVal(e.actual),
+    econProvisional(e), econProvisionalTitle(e));
 
   econPopup.innerHTML = `
     <div class="econ-pop-head">
@@ -2643,6 +2670,7 @@ function showEconPopup(rowEl) {
     </div>
     <div class="econ-pop-meta">${esc(when)}${esc(country)}</div>
     ${stats.replace('class="econ-stats"', 'class="econ-stats econ-pop-stats"')}
+    ${econProvisional(e) ? `<div class="econ-pop-provisional">Preliminary${e.actual_period ? ` (${esc(e.actual_period)})` : ""} - calculated from BLS data ahead of the calendar feed. Replaced automatically when the official figure publishes.</div>` : ""}
     <div class="econ-pop-section"><span class="econ-pop-kicker">What it measures</span><p>${esc(e.edu_what || "")}</p></div>
     <div class="econ-pop-section econ-pop-trade"><span class="econ-pop-kicker">How it may affect trading</span><p>${esc(e.edu_trade || "")}</p></div>
   `;
