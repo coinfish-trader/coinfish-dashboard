@@ -1978,8 +1978,8 @@ function rateDetails(key) {
     const f = (lastMacroData.vix || {}).fear_ratio;
     if (f) {
       return {title: "Fear Ratio (VIX / VIX3M)", value: f.value.toFixed(3), chip: frChip(f.change),
-              what: RATE_WHAT[key] + frBandTable(f.band), read: frRead(f), trade: FR_TRADE,
-              source: frSource(f)};
+              what: RATE_WHAT[key], whatExtraHtml: frBandTable(f.band),
+              read: frRead(f), trade: FR_TRADE, source: frSource(f)};
     }
   }
   const credit = lastMacroData.credit || {};
@@ -2004,7 +2004,7 @@ function openRateModal(key) {
   document.getElementById("rateModalTitle").textContent = d.title;
   document.getElementById("rateModalValue").innerHTML = `${esc(d.value)} ${d.chip}`;
   document.getElementById("rateModalBody").innerHTML = `
-    <div class="fg-info-section"><span class="fg-info-kicker">What it is</span><p>${esc(d.what)}</p></div>
+    <div class="fg-info-section"><span class="fg-info-kicker">What it is</span><p>${esc(d.what)}</p>${d.whatExtraHtml || ""}</div>
     <div class="fg-info-section"><span class="fg-info-kicker">Today's read</span><p>${esc(d.read)}</p></div>
     ${d.trade ? `<div class="fg-info-section fg-info-trade"><span class="fg-info-kicker">What it means for your trades</span><p>${esc(d.trade)}</p></div>` : ""}
     <div class="fg-info-section"><span class="fg-info-kicker">Where the number comes from</span><p>${esc(d.source)}</p></div>`;
@@ -2086,12 +2086,17 @@ async function loadMacro() {
 
   let statsHtml = "";
   if (vix.vix !== null && vix.vix !== undefined) {
-    const termClass = vix.term_structure === "contango" ? "term-contango" : "term-backwardation";
+    // term_structure is null when the two legs aren't from the same session -
+    // VIX9D stops at the close while VIX runs pre-market, and comparing them
+    // then flipped the label to "backwardation" on nothing but the clock.
+    const term = vix.term_structure;
+    const termClass = term === "contango" ? "term-contango"
+                    : term === "backwardation" ? "term-backwardation" : "";
     statsHtml += `
       <div class="macro-item">
         <span class="label">VIX / VIX9D</span>
         <span class="value">${esc(vix.vix)} / ${esc(vix.vix9d)}</span>
-        <span class="sub ${termClass}">${esc(vix.term_structure)}</span>
+        <span class="sub ${termClass}">${esc(term || "mixed sessions")}</span>
       </div>`;
   }
   const fr = vix.fear_ratio;

@@ -1657,7 +1657,11 @@ def fetch_vix_snapshot():
             "fear_ratio": None,
             "error": None,
         }
-        if out["vix9d"] is not None:
+        # Same session rule as the fear ratio below. VIX9D stops ticking at the
+        # close while VIX publishes pre-market, so comparing them across
+        # sessions flipped this label to "backwardation" purely on the clock -
+        # it read that way on the live site the morning the fear ratio shipped.
+        if out["vix9d"] is not None and vix9d and vix["session"] == vix9d["session"]:
             out["term_structure"] = "contango" if out["vix9d"] < out["vix"] else "backwardation"
             out["spread"] = round(out["vix"] - out["vix9d"], 2)
 
