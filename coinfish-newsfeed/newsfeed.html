@@ -265,6 +265,24 @@
   .macro-item.spread .value { color: var(--teal-bright); }
   .macro-item.spread.inverted .value { color: var(--red); }
   .macro-item.fed .value { color: var(--gold-bright); }
+  /* Fear ratio (VIX/VIX3M) band colors - the gauge gates whether premium gets
+     sold, so the four bands are visually distinct rather than a gradient. */
+  .macro-item.fear-ratio .value { color: var(--off-white); }
+  .macro-item.fear-ratio.calm .value { color: var(--teal-bright); }
+  .macro-item.fear-ratio.watch .value { color: var(--gold-bright); }
+  .macro-item.fear-ratio.elevated .value { color: #ff9f43; }
+  .macro-item.fear-ratio.stress .value { color: var(--red); }
+  .fr-band { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .fr-band.calm { color: var(--teal-bright); }
+  .fr-band.watch { color: var(--gold-bright); }
+  .fr-band.elevated { color: #ff9f43; }
+  .fr-band.stress { color: var(--red); }
+  .fr-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.7rem; }
+  .fr-table td { padding: 3px 6px; border-top: 1px solid rgba(255,255,255,0.08); }
+  body.light-theme .fr-table td { border-top-color: rgba(10,35,66,0.1); }
+  .fr-table tr.active td { background: rgba(255,255,255,0.06); font-weight: 700; }
+  body.light-theme .fr-table tr.active td { background: rgba(10,35,66,0.06); }
+  .fr-table td:first-child { white-space: nowrap; font-family: 'Inter', sans-serif; }
 
   /* Treasury auctions */
   .auction-row {
@@ -1757,6 +1775,7 @@ const RATE_WHAT = {
   "2s10s": "The 10-year minus the 2-year. The slope between what the Fed is expected to do and what the market thinks growth and inflation look like long term.",
   "3m10s": "The 10-year minus the 3-month. The same slope idea measured against cash, and the version the New York Fed's own recession model runs on.",
   "Fed Funds Target": "The range the FOMC tells banks to lend overnight within, plus EFFR: the rate fed funds actually traded at last night inside that range.",
+  "Fear Ratio": "VIX divided by VIX3M. VIX is the option market's expected S&P move over the next 30 days; VIX3M is the same over 3 months. Think of two weather forecasts: below 1.00 the near term is calmer than the far term (contango, and the condition selling premium is built for), above 1.00 the storm is here now (backwardation).",
   "HY Spread": "The extra yield junk-rated companies must pay over Treasuries to borrow, in basis points. It is the price of credit risk, and the cleanest single read on whether lenders are relaxed or scared.",
 };
 
@@ -1859,6 +1878,59 @@ let lastMacroData = {};
 // market quote (CNBC covers all six tenors, so 2Y and 7Y are live too as of
 // 2026-10-15); "close" is CNBC's last print outside market hours; "treasury"
 // is the once-a-day par curve, the floor we fall back to.
+// Fear ratio = VIX / VIX3M. Billy's name for the VIX term-structure gauge.
+// Reuses the .bps chip classes, whose up=red / down=green reading is already
+// correct here: a rising ratio means near-term fear gaining on the long view.
+function frChip(change) {
+  if (change === null || change === undefined) return "";
+  const cls = change > 0 ? "up" : (change < 0 ? "down" : "flat");
+  const arrow = change > 0 ? "▲" : (change < 0 ? "▼" : "•");
+  return `<span class="bps ${cls}">${arrow} ${Math.abs(change).toFixed(3)}</span>`;
+}
+
+function frStampShort(fr) {
+  return fr.source === "live" ? "live" : `close ${shortDate(fr.as_of)}`;
+}
+
+function frBandTable(active) {
+  const rows = [
+    ["Under 0.85", "Comfortable", "calm"],
+    ["0.85 - 0.95", "Caution", "watch"],
+    ["0.95 - 1.00", "Elevated", "elevated"],
+    ["Above 1.00", "Stand aside", "stress"],
+  ];
+  return `<table class="fr-table">${rows.map(([range, label, tone]) =>
+    `<tr class="${label === active ? "active" : ""}"><td>${range}</td><td class="fr-band ${tone}">${label}</td></tr>`
+  ).join("")}</table>`;
+}
+
+function frRead(fr) {
+  const parts = [];
+  parts.push(`VIX ${fr.vix} over VIX3M ${fr.vix3m} is ${fr.value.toFixed(3)} - ${fr.structure}.`);
+  parts.push(fr.meaning || "");
+  if (fr.change !== null && fr.change !== undefined) {
+    const dir = fr.change > 0 ? "up" : fr.change < 0 ? "down" : "flat";
+    parts.push(fr.change === 0
+      ? "Unchanged from the prior session."
+      : `${dir === "up" ? "Up" : "Down"} ${Math.abs(fr.change).toFixed(3)} from the prior session (${fr.prior.toFixed(3)}), so near-term fear is ${dir === "up" ? "gaining on" : "falling back from"} the three-month view.`);
+  }
+  return parts.filter(Boolean).join(" ");
+}
+
+const FR_TRADE = "Short premium is paid to carry near-term risk, and this ratio is the price of that risk relative to the three-month view. Deep contango is the condition the strategy is built for. As it climbs toward 1.00 the near end is repricing faster than the back, which is the move that hurts an open short-premium book - the loss arrives before the forecast catches up. Above 1.00 the market is paying more for 30-day protection than for 3-month, which has marked the entry to every modern volatility event.";
+
+function frSource(fr) {
+  if (fr.source === "live") {
+    return `Both legs are live, quoted in the same session${fr.as_of ? ` (as of ${quoteTime(fr.as_of)})` : ""}.`;
+  }
+  let text = `Last matched close, ${shortDate(fr.as_of)}: VIX ${fr.vix} over VIX3M ${fr.vix3m}.`;
+  if (fr.live_vix) {
+    const naive = (fr.live_vix / fr.vix3m);
+    text += ` VIX is already trading at ${fr.live_vix}${fr.live_vix_at ? ` (${quoteTime(fr.live_vix_at)})` : ""}, but VIX3M does not tick until the cash open, so dividing the two right now would give ${naive.toFixed(3)} - a live numerator over a stale denominator, which always reads calmer than the truth. The honest number for today lands at the close.`;
+  }
+  return text;
+}
+
 function yieldStampShort(y) {
   if (y.source === "treasury") return `Treasury close ${shortDate(y.as_of)}`;
   if (y.source === "close") return `last close ${quoteTime(y.as_of)}`;
@@ -1901,6 +1973,14 @@ function rateDetails(key) {
             source: sp.source === "live"
               ? `Both legs are live cash-market quotes from the same moment (${quoteTime(sp.as_of)}), which is what makes the spread and its daily change meaningful intraday.`
               : `Both legs come from Treasury's official daily curve for ${shortDate(sp.as_of)}, so the two yields are measured at the same moment. Used whenever a live quote is missing or the two legs aren't from the same moment - a live long leg against a stale short leg produces a spread that looks real and isn't.`};
+  }
+  if (key === "Fear Ratio") {
+    const f = (lastMacroData.vix || {}).fear_ratio;
+    if (f) {
+      return {title: "Fear Ratio (VIX / VIX3M)", value: f.value.toFixed(3), chip: frChip(f.change),
+              what: RATE_WHAT[key] + frBandTable(f.band), read: frRead(f), trade: FR_TRADE,
+              source: frSource(f)};
+    }
   }
   const credit = lastMacroData.credit || {};
   if (key === "HY Spread" && credit.hy_bps !== null && credit.hy_bps !== undefined) {
@@ -2012,6 +2092,18 @@ async function loadMacro() {
         <span class="label">VIX / VIX9D</span>
         <span class="value">${esc(vix.vix)} / ${esc(vix.vix9d)}</span>
         <span class="sub ${termClass}">${esc(vix.term_structure)}</span>
+      </div>`;
+  }
+  const fr = vix.fear_ratio;
+  if (fr && fr.value !== null && fr.value !== undefined) {
+    statsHtml += `
+      <div class="macro-item clickable fear-ratio ${esc(fr.tone || "")}" data-rate="Fear Ratio">
+        <span class="label">Fear Ratio</span>
+        <span class="value-row">
+          <span class="value">${esc(fr.value.toFixed(3))}</span>
+          ${frChip(fr.change)}
+        </span>
+        <span class="stamp"><span class="fr-band ${esc(fr.tone || "")}">${esc(fr.band || "")}</span> · ${esc(frStampShort(fr))}</span>
       </div>`;
   }
   (yields || []).forEach(y => {

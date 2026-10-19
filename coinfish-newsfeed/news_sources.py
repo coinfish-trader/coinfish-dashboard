@@ -1527,21 +1527,177 @@ def fetch_sector_heatmap():
 # VIX9D < VIX (contango) = calm/normal. VIX9D > VIX (backwardation) = stress.
 # ---------------------------------------------------------------------------
 
-def fetch_vix_snapshot():
+# ---------------------------------------------------------------------------
+# VIX term structure and the "fear ratio" (Billy's name for VIX / VIX3M).
+#
+# VIX is the option market's expected S&P move over the next 30 days; VIX3M is
+# the same thing over 3 months. Dividing one by the other asks whether the
+# near-term forecast is calmer than the long-term one:
+#
+#   below 1.00  contango       near term calmer than long term; premium pays
+#   above 1.00  backwardation  the storm is here now; what hurt short-premium
+#                              books in Feb 2018, Mar 2020 and Aug 2024
+#
+# THE TIMING TRAP (found 2026-10-19). VIX publishes pre-market from about
+# 3am ET; VIX3M only ticks once the cash session opens at 9:30. So before the
+# open, a naive VIX/VIX3M divides a live numerator by the PREVIOUS SESSION'S
+# denominator. On the morning this was built: VIX 18.80 (8:06am today) over
+# VIX3M 20.50 (Friday 4:15pm) = 0.917, while the real matched close was
+# 19.99/20.50 = 0.975. The error is directional, not random - it always reads
+# calmer than reality, because VIX3M hasn't repriced whatever is moving VIX.
+# And this ratio is a stand-aside trigger, so a wrong read changes whether a
+# trade gets put on. Same family as the 3m10s spread bug: both legs must come
+# from the same session or the number is fiction.
+# ---------------------------------------------------------------------------
+
+VOL_INDEX_TICKERS = {"vix": "^VIX", "vix9d": "^VIX9D", "vix3m": "^VIX3M"}
+
+YAHOO_CHART_URL = ("https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+                   "?range=1mo&interval=1d")
+
+# Billy's bands. The 0.95-1.00 band is named "Elevated" - his original table
+# jumped from "Caution" (0.85-0.95) straight to "Stand aside" (above 1.00),
+# leaving Friday's 0.975 unlabelled, which he described as "the storm was
+# almost overhead".
+FEAR_RATIO_BANDS = [
+    (0.85, "Comfortable", "calm",
+     "The near-term forecast is calmer than the three-month one. Normal contango, and the condition where selling premium is paid to wait."),
+    (0.95, "Caution", "watch",
+     "Still contango, but the gap is closing. The market is starting to price near-term risk it wasn't pricing before. Keep size honest."),
+    (1.00, "Elevated", "elevated",
+     "Nearly flat. The storm is close enough that short-dated premium is no longer being paid much to carry it. Size down and shorten duration."),
+    (None, "Stand aside", "stress",
+     "Backwardation: near-term fear now exceeds three-month fear. This is the stress trigger. It is what February 2018, March 2020 and August 2024 looked like on the way in."),
+]
+
+
+def fear_ratio_band(ratio):
+    """(label, tone, meaning) for a VIX/VIX3M reading."""
+    if ratio is None:
+        return None, None, None
+    for ceiling, label, tone, meaning in FEAR_RATIO_BANDS:
+        if ceiling is None or ratio < ceiling:
+            return label, tone, meaning
+    return None, None, None
+
+
+def _yahoo_index_series(symbol, timeout=10):
+    """
+    {"last": 18.8, "stamp": datetime, "session": "2026-10-19",
+     "closes": {"2026-10-16": 19.99, ...}} for one index, or None.
+
+    Daily closes come back alongside the live quote in the same response, so
+    the matched-session fallback costs no extra request.
+    """
     try:
-        vix = getattr(yf.Ticker("^VIX").fast_info, "last_price", None)
-        vix9d = getattr(yf.Ticker("^VIX9D").fast_info, "last_price", None)
-        if vix is None or vix9d is None:
-            return {"vix": None, "vix9d": None, "term_structure": None, "spread": None, "error": "no price"}
+        resp = _session.get(YAHOO_CHART_URL.format(symbol=symbol),
+                            headers=YAHOO_HEADERS, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+        result = resp.json()["chart"]["result"][0]
+        meta = result.get("meta", {})
+        last = meta.get("regularMarketPrice")
+        stamp_epoch = meta.get("regularMarketTime")
+        stamp = (_dt.fromtimestamp(stamp_epoch, _ET_ZONE) if stamp_epoch else None)
+
+        closes = {}
+        stamps = result.get("timestamp") or []
+        quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+        for epoch, close in zip(stamps, quote.get("close") or []):
+            if close is None:
+                continue
+            closes[_dt.fromtimestamp(epoch, _ET_ZONE).date().isoformat()] = round(float(close), 2)
+
         return {
-            "vix": round(float(vix), 2),
-            "vix9d": round(float(vix9d), 2),
-            "term_structure": "contango" if vix9d < vix else "backwardation",
-            "spread": round(float(vix - vix9d), 2),
+            "last": round(float(last), 2) if last is not None else None,
+            "stamp": stamp,
+            "session": stamp.date().isoformat() if stamp else None,
+            "closes": closes,
+        }
+    except Exception:
+        return None
+
+
+def _matched_close_ratio(vix_closes, vix3m_closes, today_iso):
+    """
+    (ratio, prior_ratio, date) from the last COMPLETED session both indexes
+    closed. Today is excluded even when both have a bar, because an in-progress
+    daily bar is not a close - the same mistake that once made every tape
+    change read 0.00%.
+    """
+    shared = sorted(d for d in (set(vix_closes) & set(vix3m_closes)) if d < today_iso)
+    if not shared:
+        return None, None, None
+
+    def ratio_on(day):
+        v, v3 = vix_closes.get(day), vix3m_closes.get(day)
+        return round(v / v3, 3) if v and v3 else None
+
+    latest = shared[-1]
+    prior = ratio_on(shared[-2]) if len(shared) > 1 else None
+    return ratio_on(latest), prior, latest
+
+
+def fetch_vix_snapshot():
+    """VIX/VIX9D term structure plus the VIX/VIX3M fear ratio."""
+    blank = {"vix": None, "vix9d": None, "vix3m": None, "term_structure": None,
+             "spread": None, "fear_ratio": None, "error": "no price"}
+    try:
+        series = {key: _yahoo_index_series(sym) for key, sym in VOL_INDEX_TICKERS.items()}
+        vix, vix9d, vix3m = series["vix"], series["vix9d"], series["vix3m"]
+        if not vix or vix["last"] is None:
+            return blank
+
+        out = {
+            "vix": vix["last"],
+            "vix9d": vix9d["last"] if vix9d else None,
+            "vix3m": vix3m["last"] if vix3m else None,
+            "term_structure": None,
+            "spread": None,
+            "fear_ratio": None,
             "error": None,
         }
+        if out["vix9d"] is not None:
+            out["term_structure"] = "contango" if out["vix9d"] < out["vix"] else "backwardation"
+            out["spread"] = round(out["vix"] - out["vix9d"], 2)
+
+        if vix3m and vix3m["last"]:
+            today_iso = _dt.now(_ET_ZONE).date().isoformat()
+            same_session = bool(vix["session"] and vix3m["session"]
+                                and vix["session"] == vix3m["session"])
+
+            if same_session:
+                value = round(vix["last"] / vix3m["last"], 3)
+                # Compare a live reading against the LAST COMPLETED session, not
+                # the one before it - _matched_close_ratio's second return value
+                # is the session prior to its first, which is the right "prior"
+                # only when the first is itself today's headline number.
+                prior, _, _ = _matched_close_ratio(vix["closes"], vix3m["closes"], today_iso)
+                ratio = {"value": value, "source": "live",
+                         "as_of": vix3m["stamp"].isoformat() if vix3m["stamp"] else None,
+                         "vix": vix["last"], "vix3m": vix3m["last"], "prior": prior}
+            else:
+                # Legs are from different sessions - the live pair would read
+                # calmer than the truth. Show the last matched close instead.
+                value, prior, day = _matched_close_ratio(vix["closes"], vix3m["closes"], today_iso)
+                if value is None:
+                    return out
+                ratio = {"value": value, "source": "close", "as_of": day,
+                         "vix": vix["closes"].get(day), "vix3m": vix3m["closes"].get(day),
+                         "prior": prior,
+                         "live_vix": vix["last"], "live_vix_at": vix["stamp"].isoformat() if vix["stamp"] else None,
+                         "vix3m_at": vix3m["stamp"].isoformat() if vix3m["stamp"] else None}
+
+            label, tone, meaning = fear_ratio_band(ratio["value"])
+            ratio["band"], ratio["tone"], ratio["meaning"] = label, tone, meaning
+            ratio["structure"] = "backwardation" if ratio["value"] >= 1.0 else "contango"
+            if ratio.get("prior") is not None:
+                ratio["change"] = round(ratio["value"] - ratio["prior"], 3)
+            out["fear_ratio"] = ratio
+
+        return out
     except Exception as exc:
-        return {"vix": None, "vix9d": None, "term_structure": None, "spread": None, "error": str(exc)}
+        return dict(blank, error=str(exc))
 
 
 # ---------------------------------------------------------------------------
