@@ -211,6 +211,7 @@
     gap: 26px;
     align-items: flex-start;
   }
+  .macro-stats-row + .macro-stats-row { margin-top: 18px; }
   .macro-item {
     display: flex;
     flex-direction: column;
@@ -2084,7 +2085,23 @@ async function loadMacro() {
       </div>`;
   }
 
+  // Two rows: the curve on its own line so all six tenors read as one series,
+  // then everything else beneath it. Billy asked for this once the snapshot
+  // grew past a comfortable single wrap.
+  let yieldsHtml = "";
   let statsHtml = "";
+  const fr = vix.fear_ratio;
+  if (fr && fr.value !== null && fr.value !== undefined) {
+    statsHtml += `
+      <div class="macro-item clickable fear-ratio ${esc(fr.tone || "")}" data-rate="Fear Ratio">
+        <span class="label">Fear Ratio</span>
+        <span class="value-row">
+          <span class="value">${esc(fr.value.toFixed(3))}</span>
+          ${frChip(fr.change)}
+        </span>
+        <span class="stamp"><span class="fr-band ${esc(fr.tone || "")}">${esc(fr.band || "")}</span> · ${esc(frStampShort(fr))}</span>
+      </div>`;
+  }
   if (vix.vix !== null && vix.vix !== undefined) {
     // term_structure is null when the two legs aren't from the same session -
     // VIX9D stops at the close while VIX runs pre-market, and comparing them
@@ -2099,22 +2116,10 @@ async function loadMacro() {
         <span class="sub ${termClass}">${esc(term || "mixed sessions")}</span>
       </div>`;
   }
-  const fr = vix.fear_ratio;
-  if (fr && fr.value !== null && fr.value !== undefined) {
-    statsHtml += `
-      <div class="macro-item clickable fear-ratio ${esc(fr.tone || "")}" data-rate="Fear Ratio">
-        <span class="label">Fear Ratio</span>
-        <span class="value-row">
-          <span class="value">${esc(fr.value.toFixed(3))}</span>
-          ${frChip(fr.change)}
-        </span>
-        <span class="stamp"><span class="fr-band ${esc(fr.tone || "")}">${esc(fr.band || "")}</span> · ${esc(frStampShort(fr))}</span>
-      </div>`;
-  }
   (yields || []).forEach(y => {
     if (y.yield_pct === null || y.yield_pct === undefined) return;
     const stamp = esc(yieldStampShort(y));
-    statsHtml += `
+    yieldsHtml += `
       <div class="macro-item clickable" data-rate="${esc(y.label)}">
         <span class="label">${esc(y.label)} Yield</span>
         <span class="value-row">
@@ -2167,7 +2172,9 @@ async function loadMacro() {
       </div>`;
   }
 
-  const html = fgHtml + (statsHtml ? `<div class="macro-stats-row">${statsHtml}</div>` : "");
+  const html = fgHtml
+    + (yieldsHtml ? `<div class="macro-stats-row macro-yields-row">${yieldsHtml}</div>` : "")
+    + (statsHtml ? `<div class="macro-stats-row">${statsHtml}</div>` : "");
   grid.innerHTML = html || '<div class="empty">Macro data unavailable.</div>';
   // Buttons/panel are rebuilt each poll. Re-apply any open selection so it doesn't blink shut.
   renderFgInfoPanel();
