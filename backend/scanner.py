@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import math
@@ -154,14 +155,38 @@ def iv_rank_from_history(ticker, current_iv, hist=None):
     return round(min(max(rank, 0.0), 100.0), 1), n
 
 
+_CBOE_SEM = threading.Semaphore(3)   # max concurrent CBOE requests
+
+
+def _cboe_get(url, timeout=30, retries=4):
+    """GET + parse JSON from CBOE with a concurrency cap and backoff on 429/5xx."""
+    import random
+    import urllib.error
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            with _CBOE_SEM:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (coinfish-scanner)"})
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    return json.load(r)
+        except urllib.error.HTTPError as exc:
+            last = exc
+            if exc.code not in (429, 500, 502, 503, 504):
+                raise
+        except Exception as exc:
+            last = exc
+        time.sleep((2 ** attempt) + random.random())
+    raise last
+
+
 def fetch_cboe_quote(ticker, timeout=10):
     """Returns dict(price, iv30, session_date) or raises."""
-    req = urllib.request.Request(
-        CBOE_QUOTE_URL.format(sym=ticker.replace("-", ".")),
-        headers={"User-Agent": "Mozilla/5.0 (coinfish-scanner)"},
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        d = json.load(r)["data"]
+    d = _cboe_get(CBOE_QUOTE_URL.format(sym=ticker.replace("-", ".")), timeout=timeout)["data"]
+    return _parse_cboe_header(d)
+
+
+def _parse_cboe_header(d):
+    """IV30 / price / session date from the top of a CBOE quote or chain payload."""
     iv30 = d.get("iv30")
     if iv30 is None or float(iv30) <= 0:
         raise ValueError("CBOE: no IV30")
@@ -236,31 +261,50 @@ def _get_price(t):
     return None
 
 
-def fetch_pc_ratio_yfinance(ticker):
-    try:
-        t = yf.Ticker(ticker)
-        exps = t.options
-        if not exps:
-            return None, "yfinance: no option expirations"
+# ---------------------------------------------------------------------------
+# Put/call open interest ratio from CBOE's full option chain (free).
+# Replaces yfinance, which returned 0, blank, or absurd OI on many tickers.
+# Window: every expiration 1-60 days out, which covers the 30-45 DTE
+# spreads this scanner is built for, and is consistent across names with
+# and without weeklies. If the data looks incomplete, P/C is left blank
+# and scores no points rather than being read as bullish.
+# ---------------------------------------------------------------------------
+CBOE_OPTIONS_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{sym}.json"
+PC_MAX_DTE  = 60
+PC_MIN_OI   = 5000     # total call + put OI in window; below this, too thin to read
+_OCC_RX = re.compile(r"^[A-Z.]+?(\d{6})([CP])\d{8}$")
 
-        total_call_oi = 0
-        total_put_oi = 0
-        used = 0
-        for exp in exps[:min(6, len(exps))]:
-            try:
-                chain = t.option_chain(exp)
-                total_call_oi += int(chain.calls["openInterest"].fillna(0).sum())
-                total_put_oi  += int(chain.puts["openInterest"].fillna(0).sum())
-                used += 1
-            except Exception:
-                continue
 
-        if total_call_oi == 0 or used == 0:
-            return None, "yfinance: zero call OI"
+def fetch_cboe_chain(ticker, timeout=30):
+    """Full CBOE chain payload ('data' dict: iv30, current_price, options[...])."""
+    return _cboe_get(CBOE_OPTIONS_URL.format(sym=ticker.replace("-", ".")), timeout=timeout)["data"]
 
-        return round(total_put_oi / total_call_oi, 3), None
-    except Exception as exc:
-        return None, f"yfinance P/C: {exc}"
+
+def pc_ratio_from_chain(opts):
+    """Returns (pc_ratio or None, error_or_None, total_oi)."""
+
+    today = date.today()
+    call_oi = put_oi = 0
+    for o in opts:
+        m = _OCC_RX.match(o.get("option", ""))
+        if not m:
+            continue
+        try:
+            dte = (datetime.strptime(m.group(1), "%y%m%d").date() - today).days
+        except ValueError:
+            continue
+        if dte < 1 or dte > PC_MAX_DTE:
+            continue
+        oi = float(o.get("open_interest") or 0)
+        if m.group(2) == "C":
+            call_oi += oi
+        else:
+            put_oi += oi
+
+    total = int(call_oi + put_oi)
+    if call_oi <= 0 or put_oi <= 0 or total < PC_MIN_OI:
+        return None, f"P/C skipped: thin or incomplete OI (calls {int(call_oi)}, puts {int(put_oi)})", total
+    return round(put_oi / call_oi, 2), None, total
 
 
 def fetch_earnings_status(ticker):
@@ -389,9 +433,17 @@ def scan_ticker(ticker):
 
     t = yf.Ticker(ticker)
 
-    # IV30 + price from CBOE
+    # One CBOE chain request: IV30, price and open interest
+    chain = None
     try:
-        q = fetch_cboe_quote(ticker)
+        chain = fetch_cboe_chain(ticker)
+    except Exception as exc:
+        result["errors"].append(f"CBOE chain unavailable: {exc}")
+
+    try:
+        if chain is None:
+            raise ValueError("no chain")
+        q = _parse_cboe_header(chain)
         result["iv30"]      = round(q["iv30"], 1)
         result["iv_source"] = "cboe_iv30"
         result["price"]     = round(q["price"], 2) if q["price"] else None
@@ -424,14 +476,18 @@ def scan_ticker(ticker):
         result["iv_rank"]      = rank
         result["iv_rank_days"] = n
 
-    # P/C ratio via yfinance options chain
-    yf_pc, yf_pc_err = fetch_pc_ratio_yfinance(ticker)
-    if yf_pc is not None:
-        result["pc_ratio"]  = yf_pc
-        result["pc_source"] = "yfinance_options"
-        result["sources"].append(f"yfinance options chain ({ticker})")
+    # P/C open interest ratio from CBOE chain (expirations 1-60 DTE)
+    if chain is not None:
+        pc, pc_err, pc_oi = pc_ratio_from_chain(chain.get("options") or [])
     else:
-        result["errors"].append(yf_pc_err or "P/C ratio unavailable")
+        pc, pc_err, pc_oi = None, "P/C skipped: CBOE chain unavailable", 0
+    result["pc_oi"] = pc_oi
+    if pc is not None:
+        result["pc_ratio"]  = pc
+        result["pc_source"] = "cboe_oi_60d"
+        result["sources"].append(f"CBOE open interest, expirations within {PC_MAX_DTE}d ({ticker})")
+    else:
+        result["errors"].append(pc_err or "P/C ratio unavailable")
 
     earn_date, earn_status = fetch_earnings_status(ticker)
     result["earnings_date"]   = earn_date
