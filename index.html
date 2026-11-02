@@ -413,6 +413,37 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 .tr-spread .row { display: flex; justify-content: space-between; margin-top: 3px; }
 .tr-spread .row .k { color: var(--muted); }
 .tr-spread .row .v { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ── Column explainer pop-outs ─────────────────────────────────────── */
+thead th .col-info {
+  display: inline-block; width: 14px; height: 14px; line-height: 14px;
+  margin-left: 5px; border-radius: 50%; text-align: center;
+  font-size: 9px; font-weight: 700; font-style: normal; text-transform: none;
+  color: var(--blue); border: 1px solid var(--blue); opacity: .7; cursor: help;
+}
+thead th:hover .col-info { opacity: 1; }
+.col-pop {
+  position: fixed; z-index: 1000; width: 340px; max-width: calc(100vw - 24px);
+  background: var(--bg2); border: 1px solid rgba(255,255,255,0.18);
+  border-top: 3px solid var(--blue);
+  border-radius: 12px; padding: 14px 16px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.55);
+  color: var(--text); font-size: 12.5px; line-height: 1.5;
+  text-transform: none; letter-spacing: 0; white-space: normal;
+  opacity: 0; transform: translateY(-4px); pointer-events: none;
+  transition: opacity .14s ease, transform .14s ease;
+}
+.col-pop.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.col-pop-title { font-size: 14px; font-weight: 700; color: var(--white); margin-bottom: 10px; }
+.col-pop-sec { margin-bottom: 10px; }
+.col-pop-sec:last-child { margin-bottom: 0; }
+.col-pop-kicker {
+  display: block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--blue); margin-bottom: 3px;
+}
+.col-pop-sec.trade { background: rgba(212,175,55,.08); border-left: 2px solid var(--yellow); padding: 7px 9px; border-radius: 6px; }
+.col-pop-sec.trade .col-pop-kicker { color: var(--yellow); }
+.col-pop p { margin: 0; }
 </style>
 </head>
 <body>
@@ -508,17 +539,17 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
         <table>
           <thead>
             <tr>
-              <th onclick="sortBy('ticker')">Ticker <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('company')">Company <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('price')">Price <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('iv_hv')" title="Implied vol divided by realized vol. Above 1.0 = options priced for more movement than the stock is delivering.">IV/HV <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('iv30')" title="CBOE 30-day implied volatility (same measure as IBKR Opt. Implied Volatility)">IV30 <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('hv30')" title="30-session realized (historical) volatility">HV30 <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('iv_rank')" title="Where today's IV30 sits in its own range. Builds from daily readings.">IV Rank <span class="sort-icon">⇅</span></th>
-              <th onclick="sortBy('pc_ratio')">P/C OI Ratio <span class="sort-icon">⇅</span></th>
-              <th class="sorted" onclick="sortBy('score')">Score <span class="sort-icon">↓</span></th>
-              <th>Setup</th>
-              <th>Earnings</th>
+              <th data-col="ticker" onclick="sortBy('ticker')">Ticker<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="company" onclick="sortBy('company')">Company<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="price" onclick="sortBy('price')">Price<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="iv_hv" onclick="sortBy('iv_hv')">IV/HV<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="iv30" onclick="sortBy('iv30')">IV30<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="hv30" onclick="sortBy('hv30')">HV30<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="iv_rank" onclick="sortBy('iv_rank')">IV Rank<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="pc_ratio" onclick="sortBy('pc_ratio')">P/C OI Ratio<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="score" class="sorted" onclick="sortBy('score')">Score<i class="col-info">i</i> <span class="sort-icon">↓</span></th>
+              <th data-col="setup">Setup<i class="col-info">i</i></th>
+              <th data-col="earnings">Earnings<i class="col-info">i</i></th>
             </tr>
           </thead>
           <tbody id="table-body">
@@ -1362,6 +1393,115 @@ function renderTrendCards() {
       document.getElementById('btn-tr-cached').style.display = 'inline-flex';
     }
   } catch (_) {}
+})();
+
+/* ─── Column explainer pop-outs (hover a header; tap the i on touch) ─── */
+const COL_INFO = {
+  ticker: { title: 'Ticker',
+    what: 'The stock symbol. The scanner watches a fixed list of 48 large, liquid names: tight bid/ask spreads and deep option chains, so you can get filled near the mid.',
+    read: 'Click the header to sort A to Z.',
+    trade: 'Every name here is liquid enough for spreads. Liquidity is already handled; your job is picking which ones are paying.' },
+  company: { title: 'Company',
+    what: 'The company name, so you don\'t have to remember what every ticker is.',
+    read: 'Click the header to sort A to Z.' },
+  price: { title: 'Price',
+    what: 'Last trade price of the stock, from CBOE. Delayed about 15 minutes during market hours.',
+    read: 'Reference only. It doesn\'t affect the score.',
+    trade: 'Use it to size the spread. A $5-wide spread on a $900 stock is a much tighter bet, relative to the stock\'s normal swings, than a $5-wide on a $60 stock.',
+    src: 'CBOE delayed quotes, with yfinance as a backup.' },
+  iv_hv: { title: 'IV/HV: is the premium rich?',
+    what: 'Implied volatility (what options are priced for) divided by historical volatility (how much the stock has actually been moving). It is the main premium check in the score.',
+    read: '1.25x or higher (green): options are priced for at least 25% more movement than the stock is delivering. Full premium points. 1.10x to 1.25x (gold): decent, half points. Under 1.10x (gray): you\'re selling at about fair price.',
+    trade: 'This is your edge as a seller. When the market overprices movement, you collect more than the stock is likely to cost you. Watch out right before earnings: a high reading there is the market pricing the report, not free money.',
+    src: 'IV30 from CBOE divided by HV30 from yfinance price history.' },
+  iv30: { title: 'IV30: implied volatility',
+    what: 'The option market\'s expected yearly move for the stock, blended to a 30-day horizon. Same measure as IBKR\'s "Opt. Implied Volatility."',
+    read: '30% means options are priced for about a 30% move over a year, roughly 8.7% over the next 30 days (one standard deviation). Higher IV means bigger premiums, but also a stock the market thinks can move more.',
+    trade: 'A high IV30 by itself isn\'t an edge. A naturally wild stock always has high IV. Compare it to HV30 (the IV/HV column) or to its own history (IV Rank) to know whether it\'s expensive.',
+    src: 'CBOE IV30 index for each stock. About 15 minutes delayed.' },
+  hv30: { title: 'HV30: realized volatility',
+    what: 'How much the stock has actually moved over the last 30 trading sessions, annualized so it compares directly to IV30.',
+    read: 'This is what the stock is really doing. If IV30 is well above HV30, options are pricing in more movement than the stock has been delivering.',
+    trade: 'Think of HV30 as the stock\'s recent speed limit. If you sell a spread priced for 35% volatility on a stock moving at 20%, the odds lean your way.',
+    src: 'Daily closes from yfinance: standard deviation of the last 30 daily returns, times the square root of 252.' },
+  iv_rank: { title: 'IV Rank: expensive vs. its own history?',
+    what: 'Where today\'s IV30 sits between its lowest and highest reading in the stored history. 0 means the cheapest options have been, 100 means the most expensive.',
+    read: 'Above 50 (green): premium is rich for this stock. Full points. 35 to 50 (gold): half points. Under 35 (gray): options are cheap compared with their normal level. The number in brackets is how many days of history it\'s based on. Short history means a rough read.',
+    trade: 'Higher is better for you. Expensive premium tends to drift back down while you hold the spread, which helps you. Ignore it around earnings: it spikes just before a report and crashes to near 0 right after.',
+    src: 'The scanner saves every ticker\'s CBOE IV30 after each close, building toward a full year of history.' },
+  pc_ratio: { title: 'P/C OI Ratio: which side is the crowd on?',
+    what: 'Put open interest divided by call open interest, for every expiration in the next 60 days. Open interest is contracts still held, not just traded today.',
+    read: 'Under 0.70 (green): more calls than puts held, so positioning leans bullish. Over 1.0 (red): more puts, leaning bearish or heavily hedged. 0.70 to 1.0: no clear lean. Blank means the data was thin, and it scores 0.',
+    trade: 'It picks your side. A bullish lean points to a bull put spread (sell puts below the market). A bearish lean points to a bear call spread. No lean plus rich premium is iron condor territory. Treat extreme readings as suspect: one big institutional hedge can skew it.',
+    src: 'CBOE full option chain open interest, expirations 1 to 60 days out.' },
+  score: { title: 'Score (out of 4)',
+    what: 'Premium points (0 to 2, from IV/HV or IV Rank, whichever is stronger) plus direction points (0 to 2, from P/C).',
+    read: '4/4: rich premium and a clear bullish lean. 3: one of the two is only partial. 2 or less: missing premium or missing direction.',
+    trade: 'A filter, not a trade signal. It narrows 48 names to the few worth opening in IBKR. Strikes, expiry and size are still your call.' },
+  setup: { title: 'Setup',
+    what: 'The trade the score points to.',
+    read: 'Bull put spread: rich premium and a bullish lean. Bear call spread: rich premium and a bearish lean. High IV / neutral: rich premium, no lean (iron condor candidate, or wait). Watch: premium isn\'t rich enough yet.',
+    trade: 'Top 3 only shows bull put spreads with a score of 3 or more and earnings clear. That matches your core strategy.' },
+  earnings: { title: 'Earnings',
+    what: 'The next earnings report date.',
+    read: '⚠ date (gold): reports within 24 days, so a typical spread would be open through the report. 💥 (red): reported in the last 7 days, IV just collapsed. ✓ date (green): clear. ? unknown: no date found.',
+    trade: 'Avoid holding through earnings. A gap can blow straight through your short strike. If you like a ⚠ name, choose an expiry that ends before the report date. Right after a 💥, premium is usually cheap, so there\'s little to sell.',
+    src: 'yfinance earnings calendar. Confirm the date in IBKR before trading around it.' },
+};
+
+(function initColPops() {
+  const pop = document.createElement('div');
+  pop.className = 'col-pop';
+  document.body.appendChild(pop);
+  let hideT = null, pinned = null;
+
+  function esc(t) { return String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function sec(k, t, cls) { return t ? `<div class="col-pop-sec ${cls||''}"><span class="col-pop-kicker">${k}</span><p>${esc(t)}</p></div>` : ''; }
+
+  function show(th) {
+    const d = COL_INFO[th.dataset.col];
+    if (!d) return;
+    clearTimeout(hideT);
+    pop.innerHTML = `<div class="col-pop-title">${esc(d.title)}</div>`
+      + sec('What it is', d.what)
+      + sec('How to read it', d.read)
+      + sec('What it means for your trades', d.trade, 'trade')
+      + sec('Where the number comes from', d.src);
+    pop.classList.add('show');
+    const r = th.getBoundingClientRect();
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    let left = Math.min(Math.max(8, r.left), window.innerWidth - pw - 8);
+    let top = r.bottom + 8;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 8);
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+  }
+  function hide() { pop.classList.remove('show'); pinned = null; }
+
+  document.addEventListener('mouseover', e => {
+    const th = e.target.closest('thead th[data-col]');
+    if (th && !pinned) show(th);
+    else if (e.target.closest('.col-pop')) clearTimeout(hideT);
+  });
+  document.addEventListener('mouseout', e => {
+    if (pinned) return;
+    const from = e.target.closest('thead th[data-col], .col-pop');
+    const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('thead th[data-col], .col-pop');
+    if (from && !to) hideT = setTimeout(hide, 120);
+  });
+  // Touch / click on the i icon pins it open without sorting the column
+  document.addEventListener('click', e => {
+    const icon = e.target.closest('thead th .col-info');
+    if (icon) {
+      e.stopPropagation();
+      const th = icon.closest('th');
+      if (pinned === th) { hide(); return; }
+      show(th); pinned = th; return;
+    }
+    if (pinned && !e.target.closest('.col-pop')) hide();
+  }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+  window.addEventListener('scroll', () => { if (!pinned) hide(); }, true);
 })();
 </script>
 </body>
