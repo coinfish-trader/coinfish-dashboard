@@ -902,7 +902,7 @@ function renderTable(rows) {
       <td><span class="td-company" title="${r.company}">${r.company}</span></td>
       <td class="td-price">${r.price ? '$' + r.price.toLocaleString('en-US',{minimumFractionDigits:2}) : '<span class="na-val">—</span>'}</td>
       <td class="td-iv"><span class="${ivhvClass(r.iv_hv)}">${r.iv_hv != null ? r.iv_hv.toFixed(2) + 'x' : '<span class="na-val">—</span>'}</span></td>
-      <td>${r.iv30 != null ? r.iv30.toFixed(1) + '%' : '<span class="na-val">—</span>'}</td>
+      <td>${r.iv30 != null ? r.iv30.toFixed(1) + '%' + (r.stale_date ? ` <span class="rank-build" title="CBOE was busy on this scan. Showing the last good reading from ${r.stale_date}. Re-scan in a minute for fresh data.">(prior)</span>` : '') : '<span class="na-val">—</span>'}</td>
       <td class="vol-sub">${r.hv30 != null ? r.hv30.toFixed(1) + '%' : '—'}</td>
       <td>${rankCell(r)}</td>
       <td><span class="pc-val ${pcClass(r.pc_ratio)}">${r.pc_ratio != null ? r.pc_ratio : '<span class="na-val">—</span>'}</span></td>
