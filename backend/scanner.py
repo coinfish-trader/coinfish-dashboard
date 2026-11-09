@@ -155,17 +155,25 @@ def iv_rank_from_history(ticker, current_iv, hist=None):
     return round(min(max(rank, 0.0), 100.0), 1), n
 
 
-_CBOE_SEM = threading.Semaphore(3)   # max concurrent CBOE requests
+# CBOE's CDN rejects bursts of parallel requests (HTTP 429) but is fine with
+# a steady sequential stream. All CBOE calls go through one lane, spaced out.
+_CBOE_LOCK = threading.Lock()
+_CBOE_MIN_GAP = 0.35          # seconds between request starts
+_cboe_last = [0.0]
 
 
-def _cboe_get(url, timeout=30, retries=4):
-    """GET + parse JSON from CBOE with a concurrency cap and backoff on 429/5xx."""
+def _cboe_get(url, timeout=30, retries=5):
+    """GET + parse JSON from CBOE: one request at a time, paced, backoff on 429/5xx."""
     import random
     import urllib.error
     last = None
     for attempt in range(retries + 1):
         try:
-            with _CBOE_SEM:
+            with _CBOE_LOCK:
+                wait = _cboe_last[0] + _CBOE_MIN_GAP - time.time()
+                if wait > 0:
+                    time.sleep(wait)
+                _cboe_last[0] = time.time()
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (coinfish-scanner)"})
                 with urllib.request.urlopen(req, timeout=timeout) as r:
                     return json.load(r)
@@ -175,8 +183,36 @@ def _cboe_get(url, timeout=30, retries=4):
                 raise
         except Exception as exc:
             last = exc
-        time.sleep((2 ** attempt) + random.random())
+        time.sleep(min(30, 2 ** (attempt + 1)) + random.random())
     raise last
+
+
+# Last good CBOE reading per ticker, kept on the volume. If CBOE still refuses
+# a ticker after retries, the scanner shows the prior reading, marked stale,
+# instead of a blank row.
+_CBOE_LAST_PATH = _history_dir() / "cboe_last.json"
+_cboe_last_lock = threading.Lock()
+
+
+def _cboe_last_load():
+    try:
+        with open(_CBOE_LAST_PATH) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _cboe_last_save(ticker, rec):
+    with _cboe_last_lock:
+        d = _cboe_last_load()
+        d[ticker] = rec
+        tmp = _CBOE_LAST_PATH.with_suffix(".tmp")
+        try:
+            with open(tmp, "w") as f:
+                json.dump(d, f)
+            os.replace(tmp, _CBOE_LAST_PATH)
+        except Exception:
+            pass
 
 
 def fetch_cboe_quote(ticker, timeout=10):
@@ -435,22 +471,34 @@ def scan_ticker(ticker):
 
     # One CBOE chain request: IV30, price and open interest
     chain = None
+    stale = None
+    session = None
     try:
         chain = fetch_cboe_chain(ticker)
     except Exception as exc:
-        result["errors"].append(f"CBOE chain unavailable: {exc}")
+        stale = _cboe_last_load().get(ticker)
+        if stale:
+            result["errors"].append(f"CBOE busy ({exc}); showing last good reading from {stale.get('session_date')}")
+        else:
+            result["errors"].append(f"CBOE chain unavailable: {exc}")
 
-    try:
-        if chain is None:
-            raise ValueError("no chain")
-        q = _parse_cboe_header(chain)
-        result["iv30"]      = round(q["iv30"], 1)
-        result["iv_source"] = "cboe_iv30"
-        result["price"]     = round(q["price"], 2) if q["price"] else None
-        result["sources"].append(f"CBOE IV30 ({q['session_date']})")
-        record_iv_readings({ticker: (q["session_date"], q["iv30"])})
-    except Exception as exc:
-        result["errors"].append(f"CBOE IV30 unavailable: {exc}")
+    if chain is not None:
+        try:
+            q = _parse_cboe_header(chain)
+            session = q["session_date"]
+            result["iv30"]      = round(q["iv30"], 1)
+            result["iv_source"] = "cboe_iv30"
+            result["price"]     = round(q["price"], 2) if q["price"] else None
+            result["sources"].append(f"CBOE IV30 ({q['session_date']})")
+            record_iv_readings({ticker: (q["session_date"], q["iv30"])})
+        except Exception as exc:
+            result["errors"].append(f"CBOE IV30 unavailable: {exc}")
+    elif stale:
+        result["iv30"]       = stale.get("iv30")
+        result["iv_source"]  = "cboe_iv30_stale"
+        result["price"]      = stale.get("price")
+        result["stale_date"] = stale.get("session_date")
+        result["sources"].append(f"CBOE IV30, prior reading ({stale.get('session_date')})")
 
     if result["price"] is None:
         try:
@@ -479,6 +527,14 @@ def scan_ticker(ticker):
     # P/C open interest ratio from CBOE chain (expirations 1-60 DTE)
     if chain is not None:
         pc, pc_err, pc_oi = pc_ratio_from_chain(chain.get("options") or [])
+        if result["iv30"] is not None:
+            _cboe_last_save(ticker, {
+                "iv30": result["iv30"], "price": result["price"],
+                "pc_ratio": pc, "pc_oi": pc_oi,
+                "session_date": session,
+            })
+    elif stale:
+        pc, pc_err, pc_oi = stale.get("pc_ratio"), None, stale.get("pc_oi") or 0
     else:
         pc, pc_err, pc_oi = None, "P/C skipped: CBOE chain unavailable", 0
     result["pc_oi"] = pc_oi
