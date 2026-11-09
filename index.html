@@ -255,13 +255,13 @@ a:hover { text-decoration: underline; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; min-width: 750px; }
 thead th {
-  padding: 10px 14px;
+  padding: 10px 8px;
   text-align: left;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: .05em;
+  letter-spacing: .03em;
   border-bottom: 1px solid var(--border);
   background: var(--bg2);
   cursor: pointer;
@@ -269,16 +269,19 @@ thead th {
   white-space: nowrap;
 }
 thead th:hover { color: var(--text); }
-thead th .sort-icon { margin-left: 4px; opacity: .4; }
+thead th .sort-icon { display: none; margin-left: 3px; }
+thead th.sorted .sort-icon { display: inline; }
 thead th.sorted .sort-icon { opacity: 1; color: var(--blue); }
 tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
 tbody tr:last-child { border-bottom: none; }
 tbody tr:hover { background: var(--bg3); }
-tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
+tbody td { padding: 10px 8px; font-size: 13px; vertical-align: middle; white-space: nowrap; }
+thead th:first-child, tbody td:first-child { padding-left: 14px; }
+thead th:last-child, tbody td:last-child { padding-right: 14px; }
 .td-ticker { font-weight: 700; color: var(--white); font-size: 14px; }
-.td-company{ color: var(--muted); font-size: 12px; }
+.td-company{ color: var(--muted); font-size: 12px; display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .td-price  { color: var(--text); font-variant-numeric: tabular-nums; }
-.td-iv     { min-width: 120px; }
+.td-iv     { }
 .iv-mini-track { height: 5px; background: var(--bg3); border-radius: 3px; margin-top: 3px; overflow: hidden; }
 .iv-mini-fill  { height: 100%; border-radius: 3px; background: linear-gradient(to right, var(--green), var(--yellow) 50%, var(--red) 80%); }
 .iv-val    { font-size: 12px; font-weight: 600; color: var(--text); }
@@ -417,7 +420,7 @@ tbody td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 /* ── Column explainer pop-outs ─────────────────────────────────────── */
 thead th .col-info {
   display: inline-block; width: 14px; height: 14px; line-height: 14px;
-  margin-left: 5px; border-radius: 50%; text-align: center;
+  margin-left: 4px; border-radius: 50%; text-align: center;
   font-size: 9px; font-weight: 700; font-style: normal; text-transform: none;
   color: var(--blue); border: 1px solid var(--blue); opacity: .7; cursor: help;
 }
@@ -546,7 +549,7 @@ thead th:hover .col-info { opacity: 1; }
               <th data-col="iv30" onclick="sortBy('iv30')">IV30<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
               <th data-col="hv30" onclick="sortBy('hv30')">HV30<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
               <th data-col="iv_rank" onclick="sortBy('iv_rank')">IV Rank<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
-              <th data-col="pc_ratio" onclick="sortBy('pc_ratio')">P/C OI Ratio<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
+              <th data-col="pc_ratio" onclick="sortBy('pc_ratio')">P/C Ratio<i class="col-info">i</i> <span class="sort-icon">⇅</span></th>
               <th data-col="score" class="sorted" onclick="sortBy('score')">Score<i class="col-info">i</i> <span class="sort-icon">↓</span></th>
               <th data-col="setup">Setup<i class="col-info">i</i></th>
               <th data-col="earnings">Earnings<i class="col-info">i</i></th>
@@ -896,7 +899,7 @@ function renderTable(rows) {
   body.innerHTML = sorted.map(r => `
     <tr>
       <td class="td-ticker">${r.ticker}</td>
-      <td><span class="td-company">${r.company}</span></td>
+      <td><span class="td-company" title="${r.company}">${r.company}</span></td>
       <td class="td-price">${r.price ? '$' + r.price.toLocaleString('en-US',{minimumFractionDigits:2}) : '<span class="na-val">—</span>'}</td>
       <td class="td-iv"><span class="${ivhvClass(r.iv_hv)}">${r.iv_hv != null ? r.iv_hv.toFixed(2) + 'x' : '<span class="na-val">—</span>'}</span></td>
       <td>${r.iv30 != null ? r.iv30.toFixed(1) + '%' : '<span class="na-val">—</span>'}</td>
